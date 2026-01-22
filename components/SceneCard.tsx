@@ -18,11 +18,13 @@ export const SceneCard: React.FC<SceneCardProps> = ({
     const [isLightboxOpen, setIsLightboxOpen] = useState(false);
 
     const handleDownload = () => {
-        const url = scene.imageUrl;
+        // Handle both image and video downloads
+        const url = scene.imageUrl || scene.videoUrl;
         if (!url) return;
         const link = document.createElement('a');
         link.href = url;
-        link.download = `production-scene-${scene.id}.jpeg`;
+        const extension = scene.videoUrl ? 'mp4' : 'jpeg';
+        link.download = `production-scene-${scene.id}.${extension}`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -41,7 +43,8 @@ export const SceneCard: React.FC<SceneCardProps> = ({
         <>
             <div className="bg-[#121216] rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col ring-1 ring-white/10 group transition-all hover:ring-white/20">
                 <div className={`${getAspectClass()} bg-black relative overflow-hidden flex items-center justify-center`}>
-                    {scene.isLoading && (
+                    {/* Display loading state if isLoading prop is set or based on scene status */}
+                    {(scene.isLoading || scene.status === 'expanding' || scene.status === 'rendering') && (
                         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/90 backdrop-blur-xl text-center p-6">
                             <div className="w-12 h-12 border-2 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin"></div>
                             <p className="text-cyan-400 font-black mt-6 tracking-widest uppercase text-[10px]">
@@ -61,6 +64,15 @@ export const SceneCard: React.FC<SceneCardProps> = ({
                                 <span className="bg-black/60 backdrop-blur-md px-5 py-2.5 rounded-full text-[10px] font-black uppercase tracking-[0.2em] border border-white/10 shadow-xl">Inspect Keyframe</span>
                             </div>
                         </div>
+                    ) : scene.videoUrl ? (
+                        <video 
+                            src={scene.videoUrl} 
+                            controls 
+                            autoPlay 
+                            loop 
+                            muted
+                            className="w-full h-full object-contain"
+                        />
                     ) : (
                         <div className="w-full h-full flex items-center justify-center bg-gray-950 italic text-gray-800 text-[10px] uppercase font-black tracking-widest">
                             Awaiting Frame Generation
@@ -93,20 +105,20 @@ export const SceneCard: React.FC<SceneCardProps> = ({
                         />
                     </div>
 
-                    {scene.imageUrl && (
+                    {(scene.imageUrl || scene.videoUrl) && (
                         <div className="space-y-4">
                             <h3 className="font-black text-[10px] text-amber-500 uppercase tracking-[0.4em]">III. Asset Refinement</h3>
                             <div className="flex gap-2">
                                 <input 
                                     type="text"
                                     placeholder="Change lighting, add elements..."
-                                    value={scene.nudgePrompt}
+                                    value={scene.nudgePrompt || ''}
                                     onChange={(e) => onNudgePromptChange(scene.id, e.target.value)}
                                     className="flex-grow bg-black/60 border border-gray-800/50 rounded-2xl px-6 py-4 text-sm text-gray-300 outline-none focus:border-amber-500/50"
                                 />
                                 <button 
                                     onClick={() => onNudge(scene.id)}
-                                    disabled={!scene.nudgePrompt || scene.isLoading}
+                                    disabled={!scene.nudgePrompt || scene.isLoading || scene.status === 'expanding' || scene.status === 'rendering'}
                                     className="px-8 py-4 bg-amber-500/10 text-amber-500 border border-amber-500/20 rounded-2xl text-[10px] font-black uppercase hover:bg-amber-500/20 disabled:opacity-30 transition-all"
                                 >
                                     FIX
@@ -125,7 +137,7 @@ export const SceneCard: React.FC<SceneCardProps> = ({
                         </button>
                         <button
                             onClick={handleDownload}
-                            disabled={!scene.imageUrl || isGenerating}
+                            disabled={(!scene.imageUrl && !scene.videoUrl) || isGenerating}
                             className="flex-1 py-6 bg-gray-900 hover:bg-gray-800 text-gray-300 rounded-full text-[10px] font-black uppercase tracking-widest border border-white/5 disabled:opacity-30 transition-all min-w-[100px]"
                         >
                             Export

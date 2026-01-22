@@ -3,8 +3,11 @@ export interface Scene {
   id: number;
   originalSentence: string;
   generatedPrompt: string | null;
-  nudgePrompt: string;
-  imageUrl: string | null;
-  isLoading: boolean;
+  videoUrl: string | null;
+  // Properties required for SceneCard component (legacy or for future image support)
+  imageUrl?: string | null;
+  isLoading?: boolean;
+  nudgePrompt?: string;
+  status: 'idle' | 'expanding' | 'rendering' | 'completed' | 'error';
   error: string | null;
 }
