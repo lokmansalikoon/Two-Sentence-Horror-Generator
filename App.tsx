@@ -9,8 +9,6 @@ import {
 import { SceneCard } from './components/SceneCard';
 import { ErrorAlert } from './components/ErrorAlert';
 
-// Removed local declaration of window.aistudio to avoid conflict with the environment's predefined AIStudio type.
-
 const styleOptions = [
     { name: 'Cinematic Movie', prompt: 'High-budget 35mm film photography, cinematic lighting, dramatic atmosphere, highly detailed textures, shallow depth of field.' },
     { name: 'Grainy Found Footage', prompt: 'Grainy low-quality found footage, VHS artifacts, high ISO noise, handheld camera shake, flashlight-only lighting, raw horror aesthetic.' },
@@ -29,38 +27,54 @@ const App: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [isKeyReady, setIsKeyReady] = useState<boolean>(false);
     const [isCheckingKey, setIsCheckingKey] = useState<boolean>(true);
+    const [isConnecting, setIsConnecting] = useState<boolean>(false);
+
+    // Robust check for the aistudio helper
+    const getAiStudio = () => (window as any).aistudio;
 
     useEffect(() => {
         const checkKey = async () => {
             try {
-                // Relying on the globally available aistudio object.
-                const hasKey = await (window as any).aistudio.hasSelectedApiKey();
-                setIsKeyReady(hasKey);
+                const aistudio = getAiStudio();
+                if (aistudio && typeof aistudio.hasSelectedApiKey === 'function') {
+                    const hasKey = await aistudio.hasSelectedApiKey();
+                    setIsKeyReady(hasKey);
+                } else {
+                    // If helper isn't found yet, we'll try again in a moment or assume the user can manually connect
+                    console.warn("aistudio helper not yet available.");
+                }
             } catch (e) {
-                console.error("Key check failed", e);
+                // This catches the TypeError you saw and allows the app to load
+                console.error("Key check failed during initialization:", e);
+                // Fallback: don't block the UI, let the user try to 'Connect' or 'Generate'
             } finally {
                 setIsCheckingKey(false);
             }
         };
-        checkKey();
+        
+        // Short delay to allow platform scripts to run
+        const timer = setTimeout(checkKey, 500);
+        return () => clearTimeout(timer);
     }, []);
 
     const handleSelectKey = async () => {
+        setError(null);
+        setIsConnecting(true);
         try {
-            await (window as any).aistudio.openSelectKey();
-            // Assume success as per guidelines to avoid race conditions.
-            setIsKeyReady(true);
-        } catch (e) {
-            setError("Failed to open API key selection dialog.");
+            const aistudio = getAiStudio();
+            if (aistudio && typeof aistudio.openSelectKey === 'function') {
+                await aistudio.openSelectKey();
+                // Assume success as per guidelines to avoid race conditions.
+                setIsKeyReady(true);
+            } else {
+                // Manual fallback if we are in a standard browser
+                throw new Error("API Key Selection requested. Please ensure you are using a supported Gemini environment.");
+            }
+        } catch (e: any) {
+            setError(e.message || "Failed to open API key selection dialog.");
+        } finally {
+            setIsConnecting(false);
         }
-    };
-
-    const handlePromptChange = (sceneId: number, newPrompt: string) => {
-        setScenes(prev => prev.map(s => s.id === sceneId ? { ...s, generatedPrompt: newPrompt } : s));
-    };
-
-    const handleNudgePromptChange = (sceneId: number, nudge: string) => {
-        setScenes(prev => prev.map(s => s.id === sceneId ? { ...s, nudgePrompt: nudge } : s));
     };
 
     const handleGenerate = useCallback(async () => {
@@ -90,7 +104,6 @@ const App: React.FC = () => {
                 let fullPrompt = "";
                 const stream = await generatePromptForSentenceStream(scene.originalSentence, style);
                 for await (const chunk of stream) {
-                    // Accessing .text getter from the stream chunk.
                     fullPrompt += chunk.text || "";
                     setScenes(prev => prev.map(s => s.id === scene.id ? { ...s, generatedPrompt: fullPrompt } : s));
                 }
@@ -99,10 +112,9 @@ const App: React.FC = () => {
             }
         } catch (e: any) {
             const msg = e.message || "";
-            // Reset key selection if the project is not found as per instructions.
-            if (msg.includes("Requested entity was not found")) {
+            if (msg.includes("Requested entity was not found") || msg.includes("API_KEY")) {
                 setIsKeyReady(false);
-                setError("API Project configuration error. Please re-select your key.");
+                setError("API Key Error: Please click 'Connect Project Key' to authorize production.");
             } else {
                 setError(msg || "Failed to generate visual assets.");
             }
@@ -136,6 +148,14 @@ const App: React.FC = () => {
         }
     };
 
+    const handlePromptChange = (sceneId: number, newPrompt: string) => {
+        setScenes(prev => prev.map(s => s.id === sceneId ? { ...s, generatedPrompt: newPrompt } : s));
+    };
+
+    const handleNudgePromptChange = (sceneId: number, nudge: string) => {
+        setScenes(prev => prev.map(s => s.id === sceneId ? { ...s, nudgePrompt: nudge } : s));
+    };
+
     if (isCheckingKey) {
         return (
             <div className="min-h-screen bg-[#0a0a0c] flex items-center justify-center">
@@ -151,15 +171,19 @@ const App: React.FC = () => {
                     <div className="space-y-4">
                         <h1 className="text-4xl font-black tracking-tighter uppercase">Director.AI</h1>
                         <p className="text-gray-400 text-sm leading-relaxed">
-                            To begin production, you must select a valid Gemini API key from a paid project.
+                            To begin production, connect a valid Gemini API key from a paid Google Cloud project.
                         </p>
                     </div>
-                    <button 
-                        onClick={handleSelectKey}
-                        className="w-full py-6 bg-white text-black font-black uppercase tracking-widest text-[10px] rounded-full hover:bg-purple-400 transition-all shadow-2xl active:scale-95"
-                    >
-                        Connect Project Key
-                    </button>
+                    <div className="space-y-4">
+                        <button 
+                            onClick={handleSelectKey}
+                            disabled={isConnecting}
+                            className="w-full py-6 bg-white text-black font-black uppercase tracking-widest text-[10px] rounded-full hover:bg-purple-400 disabled:bg-gray-800 disabled:text-gray-500 transition-all shadow-2xl active:scale-95"
+                        >
+                            {isConnecting ? "Connecting..." : "Connect Project Key"}
+                        </button>
+                        {error && <ErrorAlert message={error} />}
+                    </div>
                     <p className="text-[10px] text-gray-600 uppercase tracking-widest">
                         Check <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:underline">Billing Docs</a> for details.
                     </p>

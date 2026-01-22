@@ -2,12 +2,22 @@
 import { GoogleGenAI } from "@google/genai";
 
 /**
+ * Helper to get the API Key safely
+ */
+function getApiKey() {
+    const key = process.env.API_KEY;
+    if (!key) {
+        throw new Error("API_KEY not found. Please connect your project via the 'Connect Project Key' button.");
+    }
+    return key;
+}
+
+/**
  * Generates an expanded visual directive based on a script sentence.
  * Uses gemini-3-flash-preview for text generation tasks.
  */
 export function generatePromptForSentenceStream(sentence: string, style: string) {
-    // Initializing the AI client with the API key from environment variables.
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey: getApiKey() });
     const prompt = `Based on the following sentence, create a highly detailed visual directive for an AI image generator.
 Visual style: "${style}".
 Safety Guidelines (CRITICAL):
@@ -29,8 +39,7 @@ Sentence: "${sentence}"`;
  * Uses gemini-2.5-flash-image for general image generation.
  */
 export async function generateImageFromPrompt(prompt: string, aspectRatio: string, style: string): Promise<string> {
-    // Creating a new instance right before the call to ensure the latest API key is used.
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey: getApiKey() });
     const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
         contents: { parts: [{ text: `${style}. ${prompt}` }] },
@@ -43,7 +52,6 @@ export async function generateImageFromPrompt(prompt: string, aspectRatio: strin
         throw new Error("The visual asset was blocked by safety filters. Please simplify the text.");
     }
 
-    // Iterating through all parts to find the image part as per guidelines.
     for (const part of candidate?.content?.parts || []) {
         if (part.inlineData) {
             return `data:image/png;base64,${part.inlineData.data}`;
@@ -62,8 +70,7 @@ export async function generateImageFromPrompt(prompt: string, aspectRatio: strin
  * Refines an existing image using a "nudge" prompt.
  */
 export async function editImageWithNudge(base64Image: string, nudgePrompt: string, style: string): Promise<string> {
-    // Creating a new instance right before the call.
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey: getApiKey() });
     const mimeType = base64Image.match(/data:([^;]+);/)?.[1] || 'image/png';
     const imageData = base64Image.split(',')[1];
     const response = await ai.models.generateContent({
@@ -81,7 +88,6 @@ export async function editImageWithNudge(base64Image: string, nudgePrompt: strin
         throw new Error("Blocked by filters. Try a simpler request.");
     }
 
-    // Iterating through parts to find the resulting image.
     for (const part of candidate?.content?.parts || []) {
         if (part.inlineData) {
             return `data:image/png;base64,${part.inlineData.data}`;
