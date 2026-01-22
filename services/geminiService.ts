@@ -1,7 +1,13 @@
 
 import { GoogleGenAI } from "@google/genai";
 
-const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+const getAI = () => {
+    const key = process.env.API_KEY;
+    if (!key || key === 'undefined' || key === '') {
+        throw new Error("API_KEY_MISSING");
+    }
+    return new GoogleGenAI({ apiKey: key });
+};
 
 export function generatePromptForSentenceStream(sentence: string, style: string) {
     const ai = getAI();

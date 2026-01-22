@@ -28,24 +28,37 @@ const App: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [isKeyInitialized, setIsKeyInitialized] = useState<boolean>(true);
 
-    // Check for API Key on mount
-    useEffect(() => {
-        const checkKey = async () => {
-            if (window.aistudio) {
-                const hasKey = await window.aistudio.hasSelectedApiKey();
-                if (!hasKey && !process.env.API_KEY) {
-                    setIsKeyInitialized(false);
-                }
-            }
-        };
-        checkKey();
+    const checkApiKeyState = useCallback(async () => {
+        // If hardcoded/platform key exists, we're good
+        if (process.env.API_KEY && process.env.API_KEY !== 'undefined' && process.env.API_KEY !== '') {
+            setIsKeyInitialized(true);
+            return true;
+        }
+        
+        // Otherwise check AI Studio helper
+        if (window.aistudio) {
+            const hasKey = await window.aistudio.hasSelectedApiKey();
+            setIsKeyInitialized(hasKey);
+            return hasKey;
+        }
+        
+        setIsKeyInitialized(false);
+        return false;
     }, []);
+
+    useEffect(() => {
+        checkApiKeyState();
+    }, [checkApiKeyState]);
 
     const handleSelectKey = async () => {
         if (window.aistudio) {
-            await window.aistudio.openSelectKey();
-            // Assume success as per instructions to avoid race condition
-            setIsKeyInitialized(true);
+            try {
+                await window.aistudio.openSelectKey();
+                setIsKeyInitialized(true);
+                setError(null);
+            } catch (e) {
+                console.error("Failed to open key selector", e);
+            }
         }
     };
 
@@ -89,12 +102,11 @@ const App: React.FC = () => {
                 setScenes(prev => prev.map(s => s.id === scene.id ? { ...s, imageUrl, isLoading: false } : s));
             }
         } catch (e: any) {
-            const msg = e.message || "";
-            if (msg.includes("API Key") || msg.includes("entity was not found")) {
+            if (e.message === "API_KEY_MISSING" || e.message.includes("API Key") || e.message.includes("entity was not found")) {
                 setIsKeyInitialized(false);
-                setError("API Authentication failed. Please reconnect your API project.");
+                setError("API Connection required. Please click the button below.");
             } else {
-                setError(msg || "Storyboard generation failed.");
+                setError(e.message || "Storyboard generation failed.");
             }
             setScenes(prev => prev.map(s => s.isLoading ? { ...s, isLoading: false, error: 'Failed' } : s));
         } finally {
@@ -147,9 +159,11 @@ const App: React.FC = () => {
                     >
                         Connect API Key
                     </button>
-                    <p className="text-[9px] text-gray-700 uppercase font-bold tracking-widest">
-                        Required for secure cloud processing
-                    </p>
+                    <div className="pt-4">
+                        <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noreferrer" className="text-[9px] text-gray-700 uppercase font-bold tracking-widest hover:text-gray-500 transition-colors">
+                            Billing Documentation
+                        </a>
+                    </div>
                 </div>
             </div>
         );
