@@ -1,18 +1,19 @@
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Scene } from './types';
 import { 
     generatePromptForSentenceStream, 
     generateImageFromPrompt, 
-    generateVideoFromPrompt, 
-    editImageWithNudge 
+    editImageWithNudge
 } from './services/geminiService';
 import { SceneCard } from './components/SceneCard';
 import { ErrorAlert } from './components/ErrorAlert';
 
 const styleOptions = [
     { name: 'Cinematic Movie', prompt: 'High-budget 35mm film photography, cinematic lighting, dramatic atmosphere, highly detailed textures, shallow depth of field.' },
-    { name: 'Cyberpunk Neon', prompt: 'Neon-lit cyberpunk aesthetic, rainy city streets, vibrant blues and pinks, futuristic technology, high contrast.' },
+    { name: 'Grainy Found Footage', prompt: 'Grainy low-quality found footage, VHS artifacts, high ISO noise, handheld camera shake, flashlight-only lighting, wide-angle distortion, raw horror aesthetic.' },
+    { name: 'Junji Ito Manga', prompt: 'Junji Ito manga art style, intricate black and white ink line art, surreal anatomical transformations, cosmic dread, obsessive fine hatching, spiral patterns, high contrast, atmospheric psychological tension.' },
+    { name: 'Dark Surrealism', prompt: 'Dark surrealist art style, biomechanical textures, haunting desolate landscapes, organic decay, muted earthy and sickly tones, ethereal fog, unsettling atmosphere, inspired by Beksinski.' },
     { name: 'Claymation / Stop-Motion', prompt: 'Handcrafted claymation style, tactile clay textures, miniature sets, visible fingerprints, quirky stop-motion movement.' },
     { name: 'Noir Graphic Novel', prompt: 'High-contrast black and white ink drawing, deep shadows, gritty atmosphere, Mike Mignola style.' }
 ];
@@ -25,34 +26,6 @@ const App: React.FC = () => {
     const [scenes, setScenes] = useState<Scene[]>([]);
     const [isLoading, setIsLoading] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
-    const [hasProjectKey, setHasProjectKey] = useState<boolean>(false);
-    const [isAppReady, setIsAppReady] = useState<boolean>(false);
-
-    useEffect(() => {
-        // Initializing app and checking for environment
-        const init = async () => {
-            try {
-                if ((window as any).aistudio?.hasSelectedApiKey) {
-                    const selected = await (window as any).aistudio.hasSelectedApiKey();
-                    setHasProjectKey(selected);
-                }
-                setIsAppReady(true);
-            } catch (e) {
-                console.error("Initialization failed", e);
-                setIsAppReady(true); // Still show app so user can interact
-            }
-        };
-        init();
-    }, []);
-
-    const handleSetupKey = async () => {
-        if ((window as any).aistudio?.openSelectKey) {
-            await (window as any).aistudio.openSelectKey();
-            setHasProjectKey(true);
-        } else {
-            setError("Project key selector is not available in this environment.");
-        }
-    };
 
     const handlePromptChange = (sceneId: number, newPrompt: string) => {
         setScenes(prev => prev.map(s => s.id === sceneId ? { ...s, generatedPrompt: newPrompt } : s));
@@ -63,25 +36,21 @@ const App: React.FC = () => {
     };
 
     const handleGenerate = useCallback(async () => {
-        const s1 = sentence1.trim();
-        const s2 = sentence2.trim();
-        if (!s1 || !s2) {
-            setError("Both sentences are required for the text-to-video workflow.");
+        if (!sentence1.trim() || !sentence2.trim()) {
+            setError("Please enter two sentences for your storyboards.");
             return;
         }
 
         setError(null);
         setIsLoading(true);
 
-        const initialScenes: Scene[] = [s1, s2].map((text, i) => ({
+        const initialScenes: Scene[] = [sentence1, sentence2].map((text, i) => ({
             id: i + 1,
             originalSentence: text,
             generatedPrompt: null,
             nudgePrompt: '',
             imageUrl: null,
-            videoUrl: null,
             isLoading: true,
-            isVideoLoading: false,
             error: null,
         }));
         setScenes(initialScenes);
@@ -98,7 +67,8 @@ const App: React.FC = () => {
                 setScenes(prev => prev.map(s => s.id === scene.id ? { ...s, imageUrl, isLoading: false } : s));
             }
         } catch (e: any) {
-            setError(e.message || "Failed to complete generation flow.");
+            setError(e.message || "Storyboard generation failed.");
+            setScenes(prev => prev.map(s => s.isLoading ? { ...s, isLoading: false, error: 'Failed' } : s));
         } finally {
             setIsLoading(false);
         }
@@ -107,7 +77,6 @@ const App: React.FC = () => {
     const handleRegenerateImage = async (sceneId: number) => {
         const scene = scenes.find(s => s.id === sceneId);
         if (!scene || !scene.generatedPrompt) return;
-
         setScenes(prev => prev.map(s => s.id === sceneId ? { ...s, isLoading: true, error: null } : s));
         try {
             const imageUrl = await generateImageFromPrompt(scene.generatedPrompt, aspectRatio, style);
@@ -120,7 +89,6 @@ const App: React.FC = () => {
     const handleNudge = async (sceneId: number) => {
         const scene = scenes.find(s => s.id === sceneId);
         if (!scene || !scene.imageUrl || !scene.nudgePrompt) return;
-
         setScenes(prev => prev.map(s => s.id === sceneId ? { ...s, isLoading: true } : s));
         try {
             const editedUrl = await editImageWithNudge(scene.imageUrl, scene.nudgePrompt, style);
@@ -130,133 +98,80 @@ const App: React.FC = () => {
         }
     };
 
-    const handleGenerateVideo = async (sceneId: number) => {
-        const scene = scenes.find(s => s.id === sceneId);
-        if (!scene || !scene.generatedPrompt) return;
-
-        if (!hasProjectKey) {
-            await handleSetupKey();
-        }
-
-        setScenes(prev => prev.map(s => s.id === sceneId ? { ...s, isVideoLoading: true, error: null } : s));
-
-        try {
-            const videoUrl = await generateVideoFromPrompt(scene.generatedPrompt, aspectRatio);
-            setScenes(prev => prev.map(s => s.id === sceneId ? { ...s, videoUrl, isVideoLoading: false } : s));
-        } catch (e: any) {
-            const msg = e.message || "";
-            if (msg.includes("Requested entity was not found")) {
-                setHasProjectKey(false);
-                setError("Project key expired or invalid. Please setup project again.");
-                await handleSetupKey();
-            }
-            setScenes(prev => prev.map(s => s.id === sceneId ? { ...s, isVideoLoading: false, error: msg } : s));
-        }
-    };
-
-    if (!isAppReady) {
-        return (
-            <div className="min-h-screen bg-[#0a0a0c] flex items-center justify-center">
-                <div className="w-8 h-8 border-4 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin"></div>
-            </div>
-        );
-    }
-
     return (
-        <div className="min-h-screen bg-[#0a0a0c] text-gray-100 font-sans p-6 sm:p-12">
-            <div className="max-w-6xl mx-auto space-y-12">
-                <header className="flex flex-col md:flex-row items-center justify-between gap-6 border-b border-gray-800 pb-8">
+        <div className="min-h-screen bg-[#0a0a0c] text-gray-100 font-sans p-6 sm:p-12 pb-32 selection:bg-cyan-500/30">
+            <div className="max-w-[1400px] mx-auto space-y-12">
+                <header className="flex flex-col md:flex-row items-center justify-between gap-6 border-b border-white/5 pb-12">
                     <div className="text-center md:text-left">
-                        <h1 className="text-5xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-purple-400 to-indigo-500">
-                            DIRECTOR.AI
+                        <h1 className="text-6xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-indigo-400 to-purple-500 uppercase">
+                            ASSET.STUDIO
                         </h1>
-                        <p className="text-gray-400 text-lg mt-2 font-light">Cinematic workflow from text to video.</p>
+                        <p className="text-gray-500 text-lg mt-3 font-light tracking-wide italic">Automated Storyboard Production</p>
                     </div>
-                    <button 
-                        onClick={handleSetupKey}
-                        className={`px-6 py-3 rounded-xl border flex items-center gap-3 transition-all ${
-                            hasProjectKey ? 'border-green-500/50 bg-green-500/10 text-green-400' : 'border-cyan-500/50 bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20'
-                        }`}
-                    >
-                        <div className={`w-2 h-2 rounded-full ${hasProjectKey ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-cyan-500 animate-pulse'}`} />
-                        {hasProjectKey ? 'Video Project Configured' : 'Setup Video Project Key'}
-                    </button>
                 </header>
 
-                <div className="grid lg:grid-cols-[400px_1fr] gap-12 items-start">
-                    <aside className="space-y-6 bg-gray-900/30 p-8 rounded-3xl border border-gray-800/50 backdrop-blur-xl sticky top-12">
-                        <div className="space-y-4">
-                            <h2 className="text-[10px] font-black uppercase tracking-[0.3em] text-cyan-500">01. THE SCRIPT</h2>
-                            <textarea 
-                                placeholder="Act 1: The Setup..."
-                                value={sentence1}
-                                onChange={e => setSentence1(e.target.value)}
-                                className="w-full h-24 bg-black border border-gray-800 rounded-2xl p-4 text-sm focus:ring-1 focus:ring-cyan-500 outline-none transition-all placeholder:text-gray-700"
-                            />
-                            <textarea 
-                                placeholder="Act 2: The Twist..."
-                                value={sentence2}
-                                onChange={e => setSentence2(e.target.value)}
-                                className="w-full h-24 bg-black border border-gray-800 rounded-2xl p-4 text-sm focus:ring-1 focus:ring-cyan-500 outline-none transition-all placeholder:text-gray-700"
-                            />
+                <div className="grid lg:grid-cols-[380px_1fr] gap-12 items-start">
+                    <aside className="space-y-8 bg-gray-900/20 p-8 rounded-[2.5rem] border border-white/5 backdrop-blur-3xl sticky top-12">
+                        <div className="space-y-6">
+                            <h2 className="text-[10px] font-black uppercase tracking-[0.4em] text-cyan-500">I. Script Input</h2>
+                            <div className="space-y-4">
+                                <textarea placeholder="Opening scene..." value={sentence1} onChange={e => setSentence1(e.target.value)}
+                                    className="w-full h-24 bg-black/40 border border-white/5 rounded-3xl p-6 text-sm focus:ring-1 focus:ring-cyan-500 outline-none transition-all placeholder:text-gray-800"
+                                />
+                                <textarea placeholder="Conclusion..." value={sentence2} onChange={e => setSentence2(e.target.value)}
+                                    className="w-full h-24 bg-black/40 border border-white/5 rounded-3xl p-6 text-sm focus:ring-1 focus:ring-cyan-500 outline-none transition-all placeholder:text-gray-800"
+                                />
+                            </div>
                         </div>
 
-                        <div className="space-y-4 pt-4">
-                            <h2 className="text-[10px] font-black uppercase tracking-[0.3em] text-purple-500">02. VISUAL BIBLE</h2>
-                            <div className="space-y-2">
-                                <label className="text-[9px] text-gray-500 font-black uppercase tracking-widest">AESTHETIC STYLE</label>
-                                <select 
-                                    value={style}
-                                    onChange={e => setStyle(e.target.value)}
-                                    className="w-full bg-black border border-gray-800 rounded-xl p-3 text-xs focus:ring-1 focus:ring-purple-500 appearance-none"
+                        <div className="space-y-6 border-t border-white/5 pt-8">
+                            <h2 className="text-[10px] font-black uppercase tracking-[0.4em] text-purple-500">II. Artistic Direction</h2>
+                            <div className="grid gap-4">
+                                <select value={style} onChange={e => setStyle(e.target.value)}
+                                    className="w-full bg-black/40 border border-white/5 rounded-2xl p-4 text-xs text-gray-400 cursor-pointer"
                                 >
                                     {styleOptions.map(o => <option key={o.name} value={o.prompt}>{o.name}</option>)}
                                 </select>
-                            </div>
-                            <div className="space-y-2">
-                                <label className="text-[9px] text-gray-500 font-black uppercase tracking-widest">ASPECT RATIO</label>
-                                <select 
-                                    value={aspectRatio}
-                                    onChange={e => setAspectRatio(e.target.value)}
-                                    className="w-full bg-black border border-gray-800 rounded-xl p-3 text-xs focus:ring-1 focus:ring-purple-500 appearance-none"
+                                <select value={aspectRatio} onChange={e => setAspectRatio(e.target.value)}
+                                    className="w-full bg-black/40 border border-white/5 rounded-2xl p-4 text-xs text-gray-400 cursor-pointer"
                                 >
-                                    <option value="16:9">Widescreen (16:9)</option>
-                                    <option value="9:16">Vertical (9:16)</option>
-                                    <option value="1:1">Square (1:1)</option>
+                                    <option value="16:9">16:9 Cinematic</option>
+                                    <option value="9:16">9:16 Portrait</option>
+                                    <option value="1:1">1:1 Square</option>
                                 </select>
                             </div>
                         </div>
 
-                        <button 
-                            onClick={handleGenerate}
-                            disabled={isLoading}
-                            className="w-full py-4 bg-white text-black font-black uppercase tracking-[0.2em] text-xs rounded-2xl hover:bg-cyan-400 transition-all disabled:opacity-50 shadow-2xl shadow-cyan-500/10 mt-6"
+                        <button onClick={handleGenerate} disabled={isLoading}
+                            className="w-full py-6 bg-white text-black font-black uppercase tracking-[0.3em] text-[10px] rounded-full hover:bg-cyan-400 transition-all shadow-2xl shadow-cyan-500/10"
                         >
-                            {isLoading ? "PRODUCTION IN PROGRESS" : "START PRODUCTION"}
+                            {isLoading ? "Drafting Storyboard..." : "Start Storyboard"}
                         </button>
+                        
                         {error && <ErrorAlert message={error} />}
                     </aside>
 
-                    <section className="grid md:grid-cols-2 gap-8">
-                        {scenes.length > 0 ? scenes.map(scene => (
-                            <SceneCard 
-                                key={scene.id} 
-                                scene={scene}
-                                isGenerating={isLoading}
-                                onPromptChange={handlePromptChange}
-                                onRegenerate={handleRegenerateImage} 
-                                onNudge={handleNudge}
-                                onNudgePromptChange={handleNudgePromptChange}
-                                onGenerateVideo={handleGenerateVideo}
-                            />
-                        )) : (
-                            <div className="md:col-span-2 h-[500px] border border-dashed border-gray-800 rounded-[2rem] flex flex-col items-center justify-center text-gray-700">
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mb-6 opacity-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                                </svg>
-                                <p className="text-sm font-bold uppercase tracking-[0.3em]">Awaiting Script Input</p>
-                            </div>
-                        )}
+                    <section className="space-y-12">
+                        <div className="grid md:grid-cols-2 gap-8">
+                            {scenes.length > 0 ? (
+                                scenes.map(scene => (
+                                    <SceneCard 
+                                        key={scene.id} 
+                                        scene={scene}
+                                        isGenerating={isLoading}
+                                        onPromptChange={handlePromptChange}
+                                        onRegenerate={handleRegenerateImage} 
+                                        onNudge={handleNudge}
+                                        onNudgePromptChange={handleNudgePromptChange}
+                                        aspectRatio={aspectRatio}
+                                    />
+                                ))
+                            ) : (
+                                <div className="md:col-span-2 h-[500px] border border-dashed border-white/5 rounded-[3rem] flex flex-col items-center justify-center text-white/5 bg-gray-900/10">
+                                    <span className="text-[10px] font-black uppercase tracking-[0.5em]">Enter text to generate assets</span>
+                                </div>
+                            )}
+                        </div>
                     </section>
                 </div>
             </div>
