@@ -1,8 +1,10 @@
 
 import { GoogleGenAI } from "@google/genai";
 
+const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+
 export function generatePromptForSentenceStream(sentence: string, style: string) {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = getAI();
     const prompt = `Based on the following sentence, create a highly detailed visual directive for an AI image generator.
 Visual style: "${style}".
 Safety Guidelines (CRITICAL):
@@ -20,7 +22,7 @@ Sentence: "${sentence}"`;
 }
 
 export async function generateImageFromPrompt(prompt: string, aspectRatio: string, style: string): Promise<string> {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = getAI();
     const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
         contents: { parts: [{ text: `${style}. ${prompt}` }] },
@@ -40,7 +42,7 @@ export async function generateImageFromPrompt(prompt: string, aspectRatio: strin
 }
 
 export async function editImageWithNudge(base64Image: string, nudgePrompt: string, style: string): Promise<string> {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = getAI();
     const imageData = base64Image.split(',')[1];
     const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',

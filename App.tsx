@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { Scene } from './types';
 import { 
     generatePromptForSentenceStream, 
@@ -26,6 +26,28 @@ const App: React.FC = () => {
     const [scenes, setScenes] = useState<Scene[]>([]);
     const [isLoading, setIsLoading] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
+    const [isKeyInitialized, setIsKeyInitialized] = useState<boolean>(true);
+
+    // Check for API Key on mount
+    useEffect(() => {
+        const checkKey = async () => {
+            if (window.aistudio) {
+                const hasKey = await window.aistudio.hasSelectedApiKey();
+                if (!hasKey && !process.env.API_KEY) {
+                    setIsKeyInitialized(false);
+                }
+            }
+        };
+        checkKey();
+    }, []);
+
+    const handleSelectKey = async () => {
+        if (window.aistudio) {
+            await window.aistudio.openSelectKey();
+            // Assume success as per instructions to avoid race condition
+            setIsKeyInitialized(true);
+        }
+    };
 
     const handlePromptChange = (sceneId: number, newPrompt: string) => {
         setScenes(prev => prev.map(s => s.id === sceneId ? { ...s, generatedPrompt: newPrompt } : s));
@@ -67,7 +89,13 @@ const App: React.FC = () => {
                 setScenes(prev => prev.map(s => s.id === scene.id ? { ...s, imageUrl, isLoading: false } : s));
             }
         } catch (e: any) {
-            setError(e.message || "Storyboard generation failed.");
+            const msg = e.message || "";
+            if (msg.includes("API Key") || msg.includes("entity was not found")) {
+                setIsKeyInitialized(false);
+                setError("API Authentication failed. Please reconnect your API project.");
+            } else {
+                setError(msg || "Storyboard generation failed.");
+            }
             setScenes(prev => prev.map(s => s.isLoading ? { ...s, isLoading: false, error: 'Failed' } : s));
         } finally {
             setIsLoading(false);
@@ -97,6 +125,35 @@ const App: React.FC = () => {
             setScenes(prev => prev.map(s => s.id === sceneId ? { ...s, isLoading: false, error: e.message } : s));
         }
     };
+
+    if (!isKeyInitialized) {
+        return (
+            <div className="min-h-screen bg-[#0a0a0c] flex items-center justify-center p-6">
+                <div className="max-w-md w-full bg-[#121216] border border-white/10 rounded-[3rem] p-12 text-center space-y-8 shadow-2xl">
+                    <div className="space-y-4">
+                        <div className="w-16 h-16 bg-cyan-500/10 border border-cyan-500/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-cyan-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                            </svg>
+                        </div>
+                        <h2 className="text-xl font-black uppercase tracking-tighter text-white">Initialize Production</h2>
+                        <p className="text-gray-500 text-sm leading-relaxed">
+                            To use ASSET.STUDIO, you must connect a valid Gemini API Key from your Google AI Studio account.
+                        </p>
+                    </div>
+                    <button 
+                        onClick={handleSelectKey}
+                        className="w-full py-6 bg-white text-black font-black uppercase tracking-[0.2em] text-[10px] rounded-full hover:bg-cyan-400 transition-all shadow-xl shadow-cyan-500/10 active:scale-95"
+                    >
+                        Connect API Key
+                    </button>
+                    <p className="text-[9px] text-gray-700 uppercase font-bold tracking-widest">
+                        Required for secure cloud processing
+                    </p>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="min-h-screen bg-[#0a0a0c] text-gray-100 font-sans p-6 sm:p-12 pb-32 selection:bg-cyan-500/30">
