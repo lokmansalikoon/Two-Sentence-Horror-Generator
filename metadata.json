@@ -1,5 +1,5 @@
 {
-  "name": "Text-to-Video Scene Generator",
-  "description": "An application to automate the workflow of creating text-to-video scenes. Users input two sentences, and the app generates a descriptive prompt and a visual scene for each sentence using Gemini.",
+  "name": "Director.AI: Text-to-Video Workflow",
+  "description": "Professional automation tool for generating cinematic video clips from 2-sentence stories using Gemini 3 and Veo 3.1.",
   "requestFramePermissions": []
 }

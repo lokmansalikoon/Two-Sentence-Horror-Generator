@@ -1,16 +1,21 @@
-import { GoogleGenAI, Modality } from "@google/genai";
 
-export function generatePromptForSentenceStream(sentence: string) {
+import { GoogleGenAI } from "@google/genai";
+
+export function generatePromptForSentenceStream(sentence: string, style: string) {
     if (!process.env.API_KEY) {
         throw new Error("API Key is missing.");
     }
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const prompt = `Based on the following sentence, create a highly detailed and visually descriptive prompt for an AI image generator. The prompt should be a single paragraph. Do not include any introductory text like "Here is a prompt:". Just output the prompt itself.
+    const prompt = `Based on the following sentence, create a highly detailed and visually descriptive prompt for an AI image/video generator.
+
+The visual style description is: "${style}".
+
+Ensure the generated description strictly adheres to this style. The output should be a single paragraph. Do not include any introductory text.
 
 Sentence: "${sentence}"`;
     try {
         return ai.models.generateContentStream({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-3-flash-preview',
             contents: prompt,
         });
     } catch (error) {
@@ -20,76 +25,77 @@ Sentence: "${sentence}"`;
 }
 
 export async function generateImageFromPrompt(prompt: string, aspectRatio: string, style: string): Promise<string> {
-    if (!process.env.API_KEY) {
-        throw new Error("API Key is missing.");
-    }
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     try {
         const finalPrompt = `${style}. ${prompt}`;
-
-        const response = await ai.models.generateImages({
-            model: 'imagen-4.0-generate-001',
-            prompt: finalPrompt,
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash-image',
+            contents: { parts: [{ text: finalPrompt }] },
             config: {
-                numberOfImages: 1,
-                aspectRatio: aspectRatio as '1:1' | '16:9' | '9:16' | '4:3' | '3:4',
+                imageConfig: {
+                    aspectRatio: aspectRatio as any,
+                },
             },
         });
 
-        if (response.generatedImages && response.generatedImages.length > 0) {
-            const base64Image = response.generatedImages[0].image.imageBytes;
-            return `data:image/jpeg;base64,${base64Image}`;
-        } else {
-            throw new Error("No image was generated.");
+        const part = response.candidates?.[0]?.content?.parts.find(p => p.inlineData);
+        if (part?.inlineData) {
+            return `data:image/jpeg;base64,${part.inlineData.data}`;
         }
+        throw new Error("No image was generated.");
     } catch (error) {
         console.error("Error generating image:", error);
         throw new Error("Failed to generate an image.");
     }
 }
 
-
-export async function editImageWithNudge(base64Image: string, nudgePrompt: string, style: string): Promise<string> {
-    if (!process.env.API_KEY) {
-        throw new Error("API Key is missing.");
-    }
+export async function generateVideoFromPrompt(prompt: string, aspectRatio: string): Promise<string> {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     try {
-        // Strip the data URL prefix, e.g., "data:image/jpeg;base64,"
-        const imageData = base64Image.split(',')[1];
-        if (!imageData) {
-            throw new Error("Invalid base64 image format.");
+        let operation = await ai.models.generateVideos({
+            model: 'veo-3.1-fast-generate-preview',
+            prompt: prompt,
+            config: {
+                numberOfVideos: 1,
+                resolution: '720p',
+                aspectRatio: (aspectRatio === '16:9' || aspectRatio === '9:16') ? aspectRatio : '16:9'
+            }
+        });
+
+        while (!operation.done) {
+            await new Promise(resolve => setTimeout(resolve, 10000));
+            operation = await ai.operations.getVideosOperation({ operation: operation });
         }
 
+        const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
+        if (!downloadLink) throw new Error("Video generation failed - no URI returned.");
+
+        const response = await fetch(`${downloadLink}&key=${process.env.API_KEY}`);
+        const blob = await response.blob();
+        return URL.createObjectURL(blob);
+    } catch (error) {
+        console.error("Error generating video:", error);
+        throw error;
+    }
+}
+
+export async function editImageWithNudge(base64Image: string, nudgePrompt: string, style: string): Promise<string> {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    try {
+        const imageData = base64Image.split(',')[1];
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash-image',
             contents: {
                 parts: [
-                    {
-                        inlineData: {
-                            data: imageData,
-                            mimeType: 'image/jpeg',
-                        },
-                    },
-                    {
-                        text: `${style}. ${nudgePrompt}`,
-                    },
+                    { inlineData: { data: imageData, mimeType: 'image/jpeg' } },
+                    { text: `${style}. ${nudgePrompt}` },
                 ],
-            },
-            config: {
-                responseModalities: [Modality.IMAGE],
             },
         });
 
-        for (const part of response.candidates[0].content.parts) {
-            if (part.inlineData) {
-                const base64ImageBytes: string = part.inlineData.data;
-                return `data:image/jpeg;base64,${base64ImageBytes}`;
-            }
-        }
-        
-        throw new Error("No edited image was returned from the API.");
-
+        const part = response.candidates?.[0]?.content?.parts.find(p => p.inlineData);
+        if (part?.inlineData) return `data:image/jpeg;base64,${part.inlineData.data}`;
+        throw new Error("No edited image was returned.");
     } catch (error) {
         console.error("Error editing image:", error);
         throw new Error("Failed to edit the image.");
