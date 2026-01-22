@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { Scene } from './types';
 import { 
     generatePromptForSentenceStream, 
@@ -8,6 +8,8 @@ import {
 } from './services/geminiService';
 import { SceneCard } from './components/SceneCard';
 import { ErrorAlert } from './components/ErrorAlert';
+
+// Removed local declaration of window.aistudio to avoid conflict with the environment's predefined AIStudio type.
 
 const styleOptions = [
     { name: 'Cinematic Movie', prompt: 'High-budget 35mm film photography, cinematic lighting, dramatic atmosphere, highly detailed textures, shallow depth of field.' },
@@ -25,6 +27,33 @@ const App: React.FC = () => {
     const [scenes, setScenes] = useState<Scene[]>([]);
     const [isLoading, setIsLoading] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
+    const [isKeyReady, setIsKeyReady] = useState<boolean>(false);
+    const [isCheckingKey, setIsCheckingKey] = useState<boolean>(true);
+
+    useEffect(() => {
+        const checkKey = async () => {
+            try {
+                // Relying on the globally available aistudio object.
+                const hasKey = await (window as any).aistudio.hasSelectedApiKey();
+                setIsKeyReady(hasKey);
+            } catch (e) {
+                console.error("Key check failed", e);
+            } finally {
+                setIsCheckingKey(false);
+            }
+        };
+        checkKey();
+    }, []);
+
+    const handleSelectKey = async () => {
+        try {
+            await (window as any).aistudio.openSelectKey();
+            // Assume success as per guidelines to avoid race conditions.
+            setIsKeyReady(true);
+        } catch (e) {
+            setError("Failed to open API key selection dialog.");
+        }
+    };
 
     const handlePromptChange = (sceneId: number, newPrompt: string) => {
         setScenes(prev => prev.map(s => s.id === sceneId ? { ...s, generatedPrompt: newPrompt } : s));
@@ -61,6 +90,7 @@ const App: React.FC = () => {
                 let fullPrompt = "";
                 const stream = await generatePromptForSentenceStream(scene.originalSentence, style);
                 for await (const chunk of stream) {
+                    // Accessing .text getter from the stream chunk.
                     fullPrompt += chunk.text || "";
                     setScenes(prev => prev.map(s => s.id === scene.id ? { ...s, generatedPrompt: fullPrompt } : s));
                 }
@@ -68,7 +98,14 @@ const App: React.FC = () => {
                 setScenes(prev => prev.map(s => s.id === scene.id ? { ...s, imageUrl, isLoading: false } : s));
             }
         } catch (e: any) {
-            setError(e.message || "Failed to generate visual assets.");
+            const msg = e.message || "";
+            // Reset key selection if the project is not found as per instructions.
+            if (msg.includes("Requested entity was not found")) {
+                setIsKeyReady(false);
+                setError("API Project configuration error. Please re-select your key.");
+            } else {
+                setError(msg || "Failed to generate visual assets.");
+            }
             setScenes(prev => prev.map(s => s.isLoading ? { ...s, isLoading: false, error: 'Production Delayed' } : s));
         } finally {
             setIsLoading(false);
@@ -99,6 +136,38 @@ const App: React.FC = () => {
         }
     };
 
+    if (isCheckingKey) {
+        return (
+            <div className="min-h-screen bg-[#0a0a0c] flex items-center justify-center">
+                <div className="w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
+            </div>
+        );
+    }
+
+    if (!isKeyReady) {
+        return (
+            <div className="min-h-screen bg-[#0a0a0c] text-gray-100 flex items-center justify-center p-6">
+                <div className="max-w-md w-full space-y-8 bg-gray-900/40 p-12 rounded-[3rem] border border-white/5 text-center backdrop-blur-3xl">
+                    <div className="space-y-4">
+                        <h1 className="text-4xl font-black tracking-tighter uppercase">Director.AI</h1>
+                        <p className="text-gray-400 text-sm leading-relaxed">
+                            To begin production, you must select a valid Gemini API key from a paid project.
+                        </p>
+                    </div>
+                    <button 
+                        onClick={handleSelectKey}
+                        className="w-full py-6 bg-white text-black font-black uppercase tracking-widest text-[10px] rounded-full hover:bg-purple-400 transition-all shadow-2xl active:scale-95"
+                    >
+                        Connect Project Key
+                    </button>
+                    <p className="text-[10px] text-gray-600 uppercase tracking-widest">
+                        Check <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:underline">Billing Docs</a> for details.
+                    </p>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="min-h-screen bg-[#0a0a0c] text-gray-100 font-sans p-6 sm:p-12 pb-32 selection:bg-purple-500/30">
             <div className="max-w-[1400px] mx-auto space-y-12">
@@ -109,6 +178,12 @@ const App: React.FC = () => {
                         </h1>
                         <p className="text-gray-500 text-lg mt-3 font-light tracking-wide italic">Automated Storyboarding Workflow</p>
                     </div>
+                    <button 
+                        onClick={handleSelectKey}
+                        className="px-6 py-2 border border-white/10 rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-white/5 transition-all text-gray-500"
+                    >
+                        Change Key
+                    </button>
                 </header>
 
                 <div className="grid lg:grid-cols-[380px_1fr] gap-12 items-start">

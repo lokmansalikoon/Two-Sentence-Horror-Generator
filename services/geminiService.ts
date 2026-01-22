@@ -1,7 +1,12 @@
 
 import { GoogleGenAI } from "@google/genai";
 
+/**
+ * Generates an expanded visual directive based on a script sentence.
+ * Uses gemini-3-flash-preview for text generation tasks.
+ */
 export function generatePromptForSentenceStream(sentence: string, style: string) {
+    // Initializing the AI client with the API key from environment variables.
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const prompt = `Based on the following sentence, create a highly detailed visual directive for an AI image generator.
 Visual style: "${style}".
@@ -19,7 +24,12 @@ Sentence: "${sentence}"`;
     });
 }
 
+/**
+ * Generates a visual asset from an expanded prompt.
+ * Uses gemini-2.5-flash-image for general image generation.
+ */
 export async function generateImageFromPrompt(prompt: string, aspectRatio: string, style: string): Promise<string> {
+    // Creating a new instance right before the call to ensure the latest API key is used.
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
@@ -33,8 +43,12 @@ export async function generateImageFromPrompt(prompt: string, aspectRatio: strin
         throw new Error("The visual asset was blocked by safety filters. Please simplify the text.");
     }
 
-    const part = candidate?.content?.parts.find(p => p.inlineData);
-    if (part?.inlineData) return `data:image/jpeg;base64,${part.inlineData.data}`;
+    // Iterating through all parts to find the image part as per guidelines.
+    for (const part of candidate?.content?.parts || []) {
+        if (part.inlineData) {
+            return `data:image/png;base64,${part.inlineData.data}`;
+        }
+    }
     
     const textResponse = candidate?.content?.parts.find(p => p.text)?.text;
     if (textResponse) {
@@ -44,14 +58,19 @@ export async function generateImageFromPrompt(prompt: string, aspectRatio: strin
     throw new Error("Image generation failed.");
 }
 
+/**
+ * Refines an existing image using a "nudge" prompt.
+ */
 export async function editImageWithNudge(base64Image: string, nudgePrompt: string, style: string): Promise<string> {
+    // Creating a new instance right before the call.
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const mimeType = base64Image.match(/data:([^;]+);/)?.[1] || 'image/png';
     const imageData = base64Image.split(',')[1];
     const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
         contents: {
             parts: [
-                { inlineData: { data: imageData, mimeType: 'image/jpeg' } },
+                { inlineData: { data: imageData, mimeType: mimeType } },
                 { text: `${style}. ${nudgePrompt}` },
             ],
         },
@@ -62,7 +81,11 @@ export async function editImageWithNudge(base64Image: string, nudgePrompt: strin
         throw new Error("Blocked by filters. Try a simpler request.");
     }
 
-    const part = candidate?.content?.parts.find(p => p.inlineData);
-    if (part?.inlineData) return `data:image/jpeg;base64,${part.inlineData.data}`;
+    // Iterating through parts to find the resulting image.
+    for (const part of candidate?.content?.parts || []) {
+        if (part.inlineData) {
+            return `data:image/png;base64,${part.inlineData.data}`;
+        }
+    }
     throw new Error("Refinement failed.");
 }
