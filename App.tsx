@@ -26,22 +26,31 @@ const App: React.FC = () => {
     const [isLoading, setIsLoading] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
     const [hasProjectKey, setHasProjectKey] = useState<boolean>(false);
+    const [isAppReady, setIsAppReady] = useState<boolean>(false);
 
     useEffect(() => {
-        const checkKey = async () => {
-            if ((window as any).aistudio?.hasSelectedApiKey) {
-                const selected = await (window as any).aistudio.hasSelectedApiKey();
-                setHasProjectKey(selected);
+        // Initializing app and checking for environment
+        const init = async () => {
+            try {
+                if ((window as any).aistudio?.hasSelectedApiKey) {
+                    const selected = await (window as any).aistudio.hasSelectedApiKey();
+                    setHasProjectKey(selected);
+                }
+                setIsAppReady(true);
+            } catch (e) {
+                console.error("Initialization failed", e);
+                setIsAppReady(true); // Still show app so user can interact
             }
         };
-        checkKey();
+        init();
     }, []);
 
     const handleSetupKey = async () => {
         if ((window as any).aistudio?.openSelectKey) {
             await (window as any).aistudio.openSelectKey();
-            // Assume success immediately to avoid race conditions as per guidelines
             setHasProjectKey(true);
+        } else {
+            setError("Project key selector is not available in this environment.");
         }
     };
 
@@ -144,6 +153,14 @@ const App: React.FC = () => {
             setScenes(prev => prev.map(s => s.id === sceneId ? { ...s, isVideoLoading: false, error: msg } : s));
         }
     };
+
+    if (!isAppReady) {
+        return (
+            <div className="min-h-screen bg-[#0a0a0c] flex items-center justify-center">
+                <div className="w-8 h-8 border-4 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin"></div>
+            </div>
+        );
+    }
 
     return (
         <div className="min-h-screen bg-[#0a0a0c] text-gray-100 font-sans p-6 sm:p-12">
