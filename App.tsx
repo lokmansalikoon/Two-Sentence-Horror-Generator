@@ -1,7 +1,12 @@
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { Scene } from './types';
-import { generatePromptForSentenceStream, generateImageFromPrompt, generateVideoFromPrompt } from './services/geminiService';
+import { 
+    generatePromptForSentenceStream, 
+    generateImageFromPrompt, 
+    generateVideoFromPrompt, 
+    editImageWithNudge 
+} from './services/geminiService';
 import { SceneCard } from './components/SceneCard';
 import { ErrorAlert } from './components/ErrorAlert';
 
@@ -20,9 +25,32 @@ const App: React.FC = () => {
     const [scenes, setScenes] = useState<Scene[]>([]);
     const [isLoading, setIsLoading] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
+    const [hasProjectKey, setHasProjectKey] = useState<boolean>(false);
+
+    useEffect(() => {
+        const checkKey = async () => {
+            if ((window as any).aistudio?.hasSelectedApiKey) {
+                const selected = await (window as any).aistudio.hasSelectedApiKey();
+                setHasProjectKey(selected);
+            }
+        };
+        checkKey();
+    }, []);
+
+    const handleSetupKey = async () => {
+        if ((window as any).aistudio?.openSelectKey) {
+            await (window as any).aistudio.openSelectKey();
+            // Assume success immediately to avoid race conditions as per guidelines
+            setHasProjectKey(true);
+        }
+    };
 
     const handlePromptChange = (sceneId: number, newPrompt: string) => {
         setScenes(prev => prev.map(s => s.id === sceneId ? { ...s, generatedPrompt: newPrompt } : s));
+    };
+
+    const handleNudgePromptChange = (sceneId: number, nudge: string) => {
+        setScenes(prev => prev.map(s => s.id === sceneId ? { ...s, nudgePrompt: nudge } : s));
     };
 
     const handleGenerate = useCallback(async () => {
@@ -67,13 +95,38 @@ const App: React.FC = () => {
         }
     }, [sentence1, sentence2, style, aspectRatio]);
 
+    const handleRegenerateImage = async (sceneId: number) => {
+        const scene = scenes.find(s => s.id === sceneId);
+        if (!scene || !scene.generatedPrompt) return;
+
+        setScenes(prev => prev.map(s => s.id === sceneId ? { ...s, isLoading: true, error: null } : s));
+        try {
+            const imageUrl = await generateImageFromPrompt(scene.generatedPrompt, aspectRatio, style);
+            setScenes(prev => prev.map(s => s.id === sceneId ? { ...s, imageUrl, isLoading: false } : s));
+        } catch (e: any) {
+            setScenes(prev => prev.map(s => s.id === sceneId ? { ...s, isLoading: false, error: e.message } : s));
+        }
+    };
+
+    const handleNudge = async (sceneId: number) => {
+        const scene = scenes.find(s => s.id === sceneId);
+        if (!scene || !scene.imageUrl || !scene.nudgePrompt) return;
+
+        setScenes(prev => prev.map(s => s.id === sceneId ? { ...s, isLoading: true } : s));
+        try {
+            const editedUrl = await editImageWithNudge(scene.imageUrl, scene.nudgePrompt, style);
+            setScenes(prev => prev.map(s => s.id === sceneId ? { ...s, imageUrl: editedUrl, isLoading: false, nudgePrompt: '' } : s));
+        } catch (e: any) {
+            setScenes(prev => prev.map(s => s.id === sceneId ? { ...s, isLoading: false, error: e.message } : s));
+        }
+    };
+
     const handleGenerateVideo = async (sceneId: number) => {
         const scene = scenes.find(s => s.id === sceneId);
         if (!scene || !scene.generatedPrompt) return;
 
-        // Ensure key is selected for Veo
-        if (!(await (window as any).aistudio.hasSelectedApiKey())) {
-            await (window as any).aistudio.openSelectKey();
+        if (!hasProjectKey) {
+            await handleSetupKey();
         }
 
         setScenes(prev => prev.map(s => s.id === sceneId ? { ...s, isVideoLoading: true, error: null } : s));
@@ -82,64 +135,87 @@ const App: React.FC = () => {
             const videoUrl = await generateVideoFromPrompt(scene.generatedPrompt, aspectRatio);
             setScenes(prev => prev.map(s => s.id === sceneId ? { ...s, videoUrl, isVideoLoading: false } : s));
         } catch (e: any) {
-            setScenes(prev => prev.map(s => s.id === sceneId ? { ...s, isVideoLoading: false, error: e.message } : s));
+            const msg = e.message || "";
+            if (msg.includes("Requested entity was not found")) {
+                setHasProjectKey(false);
+                setError("Project key expired or invalid. Please setup project again.");
+                await handleSetupKey();
+            }
+            setScenes(prev => prev.map(s => s.id === sceneId ? { ...s, isVideoLoading: false, error: msg } : s));
         }
     };
 
     return (
         <div className="min-h-screen bg-[#0a0a0c] text-gray-100 font-sans p-6 sm:p-12">
             <div className="max-w-6xl mx-auto space-y-12">
-                <header className="text-center space-y-4">
-                    <h1 className="text-5xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-purple-400 to-indigo-500">
-                        DIRECTOR.AI
-                    </h1>
-                    <p className="text-gray-400 text-lg">Automate your 2-sentence story into cinematic video clips.</p>
+                <header className="flex flex-col md:flex-row items-center justify-between gap-6 border-b border-gray-800 pb-8">
+                    <div className="text-center md:text-left">
+                        <h1 className="text-5xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-purple-400 to-indigo-500">
+                            DIRECTOR.AI
+                        </h1>
+                        <p className="text-gray-400 text-lg mt-2 font-light">Cinematic workflow from text to video.</p>
+                    </div>
+                    <button 
+                        onClick={handleSetupKey}
+                        className={`px-6 py-3 rounded-xl border flex items-center gap-3 transition-all ${
+                            hasProjectKey ? 'border-green-500/50 bg-green-500/10 text-green-400' : 'border-cyan-500/50 bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20'
+                        }`}
+                    >
+                        <div className={`w-2 h-2 rounded-full ${hasProjectKey ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-cyan-500 animate-pulse'}`} />
+                        {hasProjectKey ? 'Video Project Configured' : 'Setup Video Project Key'}
+                    </button>
                 </header>
 
                 <div className="grid lg:grid-cols-[400px_1fr] gap-12 items-start">
-                    <aside className="space-y-6 bg-gray-900/50 p-6 rounded-2xl border border-gray-800 sticky top-12">
+                    <aside className="space-y-6 bg-gray-900/30 p-8 rounded-3xl border border-gray-800/50 backdrop-blur-xl sticky top-12">
                         <div className="space-y-4">
-                            <h2 className="text-sm font-bold uppercase tracking-widest text-cyan-400">1. Scriptwriter</h2>
+                            <h2 className="text-[10px] font-black uppercase tracking-[0.3em] text-cyan-500">01. THE SCRIPT</h2>
                             <textarea 
-                                placeholder="First sentence (The setup)..."
+                                placeholder="Act 1: The Setup..."
                                 value={sentence1}
                                 onChange={e => setSentence1(e.target.value)}
-                                className="w-full h-24 bg-black border border-gray-700 rounded-xl p-4 text-sm focus:ring-2 focus:ring-cyan-500 outline-none"
+                                className="w-full h-24 bg-black border border-gray-800 rounded-2xl p-4 text-sm focus:ring-1 focus:ring-cyan-500 outline-none transition-all placeholder:text-gray-700"
                             />
                             <textarea 
-                                placeholder="Second sentence (The twist)..."
+                                placeholder="Act 2: The Twist..."
                                 value={sentence2}
                                 onChange={e => setSentence2(e.target.value)}
-                                className="w-full h-24 bg-black border border-gray-700 rounded-xl p-4 text-sm focus:ring-2 focus:ring-cyan-500 outline-none"
+                                className="w-full h-24 bg-black border border-gray-800 rounded-2xl p-4 text-sm focus:ring-1 focus:ring-cyan-500 outline-none transition-all placeholder:text-gray-700"
                             />
                         </div>
 
-                        <div className="space-y-4">
-                            <h2 className="text-sm font-bold uppercase tracking-widest text-purple-400">2. Visual Design</h2>
-                            <select 
-                                value={style}
-                                onChange={e => setStyle(e.target.value)}
-                                className="w-full bg-black border border-gray-700 rounded-xl p-3 text-sm focus:ring-2 focus:ring-purple-500"
-                            >
-                                {styleOptions.map(o => <option key={o.name} value={o.prompt}>{o.name}</option>)}
-                            </select>
-                            <select 
-                                value={aspectRatio}
-                                onChange={e => setAspectRatio(e.target.value)}
-                                className="w-full bg-black border border-gray-700 rounded-xl p-3 text-sm focus:ring-2 focus:ring-purple-500"
-                            >
-                                <option value="16:9">Landscape (16:9)</option>
-                                <option value="9:16">Portrait (9:16)</option>
-                                <option value="1:1">Square (1:1)</option>
-                            </select>
+                        <div className="space-y-4 pt-4">
+                            <h2 className="text-[10px] font-black uppercase tracking-[0.3em] text-purple-500">02. VISUAL BIBLE</h2>
+                            <div className="space-y-2">
+                                <label className="text-[9px] text-gray-500 font-black uppercase tracking-widest">AESTHETIC STYLE</label>
+                                <select 
+                                    value={style}
+                                    onChange={e => setStyle(e.target.value)}
+                                    className="w-full bg-black border border-gray-800 rounded-xl p-3 text-xs focus:ring-1 focus:ring-purple-500 appearance-none"
+                                >
+                                    {styleOptions.map(o => <option key={o.name} value={o.prompt}>{o.name}</option>)}
+                                </select>
+                            </div>
+                            <div className="space-y-2">
+                                <label className="text-[9px] text-gray-500 font-black uppercase tracking-widest">ASPECT RATIO</label>
+                                <select 
+                                    value={aspectRatio}
+                                    onChange={e => setAspectRatio(e.target.value)}
+                                    className="w-full bg-black border border-gray-800 rounded-xl p-3 text-xs focus:ring-1 focus:ring-purple-500 appearance-none"
+                                >
+                                    <option value="16:9">Widescreen (16:9)</option>
+                                    <option value="9:16">Vertical (9:16)</option>
+                                    <option value="1:1">Square (1:1)</option>
+                                </select>
+                            </div>
                         </div>
 
                         <button 
                             onClick={handleGenerate}
                             disabled={isLoading}
-                            className="w-full py-4 bg-white text-black font-black uppercase tracking-widest rounded-xl hover:bg-cyan-400 transition-all disabled:opacity-50"
+                            className="w-full py-4 bg-white text-black font-black uppercase tracking-[0.2em] text-xs rounded-2xl hover:bg-cyan-400 transition-all disabled:opacity-50 shadow-2xl shadow-cyan-500/10 mt-6"
                         >
-                            {isLoading ? "PRODUCING..." : "START PRODUCTION"}
+                            {isLoading ? "PRODUCTION IN PROGRESS" : "START PRODUCTION"}
                         </button>
                         {error && <ErrorAlert message={error} />}
                     </aside>
@@ -151,14 +227,17 @@ const App: React.FC = () => {
                                 scene={scene}
                                 isGenerating={isLoading}
                                 onPromptChange={handlePromptChange}
-                                onRegenerate={() => {}} 
-                                onNudge={() => {}}
-                                onNudgePromptChange={() => {}}
+                                onRegenerate={handleRegenerateImage} 
+                                onNudge={handleNudge}
+                                onNudgePromptChange={handleNudgePromptChange}
                                 onGenerateVideo={handleGenerateVideo}
                             />
                         )) : (
-                            <div className="md:col-span-2 h-96 border-2 border-dashed border-gray-800 rounded-3xl flex items-center justify-center text-gray-600 font-medium">
-                                Your scenes will appear here...
+                            <div className="md:col-span-2 h-[500px] border border-dashed border-gray-800 rounded-[2rem] flex flex-col items-center justify-center text-gray-700">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mb-6 opacity-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                </svg>
+                                <p className="text-sm font-bold uppercase tracking-[0.3em]">Awaiting Script Input</p>
                             </div>
                         )}
                     </section>
