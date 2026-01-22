@@ -2,10 +2,21 @@
 import { GoogleGenAI } from "@google/genai";
 
 /**
+ * Validates that an API key is present before continuing.
+ */
+function getClient() {
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) {
+    throw new Error("API Key missing. Please connect to AI Studio using the button on the dashboard.");
+  }
+  return new GoogleGenAI({ apiKey });
+}
+
+/**
  * Expands a simple sentence into a rich visual prompt based on a specific style protocol.
  */
 export async function expandPrompt(sentence: string, style: string): Promise<string> {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = getClient();
   
   const styleInstructions: Record<string, string> = {
     "Noir Horror": "high-contrast film noir horror, deep shadows, dramatic chiaroscuro lighting, grainy monochrome or heavily desaturated tones, rainy urban atmosphere.",
@@ -17,7 +28,7 @@ export async function expandPrompt(sentence: string, style: string): Promise<str
   const instruction = styleInstructions[style] || "cinematic cinematic visual description.";
 
   const response = await ai.models.generateContent({
-    model: 'gemini-flash-lite-latest',
+    model: 'gemini-3-flash-preview',
     contents: `Task: Create a visual description for an image generator.
     Style Protocol: ${style}
     Visual Directives: ${instruction}
@@ -32,7 +43,7 @@ export async function expandPrompt(sentence: string, style: string): Promise<str
  * Generates a 1:1 image using the budget-friendly gemini-2.5-flash-image model.
  */
 export async function generateImage(prompt: string): Promise<string> {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = getClient();
   const response = await ai.models.generateContent({
     model: 'gemini-2.5-flash-image',
     contents: { parts: [{ text: prompt }] },
@@ -53,7 +64,7 @@ export async function generateImage(prompt: string): Promise<string> {
  * Edits an existing image based on a nudge prompt using gemini-2.5-flash-image.
  */
 export async function editImageWithNudge(base64Image: string, nudge: string): Promise<string> {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = getClient();
   const base64Data = base64Image.split(',')[1];
   const mimeType = base64Image.split(';')[0].split(':')[1];
 

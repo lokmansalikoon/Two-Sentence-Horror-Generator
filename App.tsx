@@ -1,9 +1,11 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Scene } from './types';
 import { expandPrompt, generateImage, editImageWithNudge } from './services/geminiService';
 import { SceneCard } from './components/SceneCard';
 import { ErrorAlert } from './components/ErrorAlert';
+
+// Removed conflicting Window declaration; aistudio is assumed to be globally available as per guidelines.
 
 const STYLE_OPTIONS = [
   "Noir Horror",
@@ -13,12 +15,29 @@ const STYLE_OPTIONS = [
 ];
 
 const App: React.FC = () => {
+  const [hasKey, setHasKey] = useState<boolean | null>(null);
   const [sentence1, setSentence1] = useState('');
   const [sentence2, setSentence2] = useState('');
   const [selectedStyle, setSelectedStyle] = useState(STYLE_OPTIONS[0]);
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    checkKey();
+  }, []);
+
+  const checkKey = async () => {
+    // Accessing window.aistudio helper provided by the platform
+    const selected = await (window as any).aistudio.hasSelectedApiKey();
+    setHasKey(selected);
+  };
+
+  const handleConnect = async () => {
+    await (window as any).aistudio.openSelectKey();
+    // Assume success as per platform guidelines to avoid race condition
+    setHasKey(true);
+  };
 
   const runAutomation = async () => {
     if (!sentence1.trim() || !sentence2.trim()) {
@@ -45,6 +64,13 @@ const App: React.FC = () => {
         setScenes(prev => prev.map(s => s.id === scene.id ? { ...s, imageUrl: url, status: 'completed' } : s));
       } catch (err: any) {
         const msg = err.message || "Production halted due to an internal error.";
+        
+        // Handle "Requested entity was not found" error by prompting user to select a paid key again
+        if (msg.includes("Requested entity was not found.")) {
+          await (window as any).aistudio.openSelectKey();
+          setHasKey(true);
+        }
+
         setScenes(prev => prev.map(s => s.id === scene.id ? { ...s, status: 'error', error: msg } : s));
         setError(msg);
         break;
@@ -65,8 +91,13 @@ const App: React.FC = () => {
       const url = await generateImage(expanded);
       setScenes(prev => prev.map(s => s.id === id ? { ...s, imageUrl: url, status: 'completed' } : s));
     } catch (err: any) {
-      setError(err.message);
-      setScenes(prev => prev.map(s => s.id === id ? { ...s, status: 'error', error: err.message } : s));
+      const msg = err.message || "Regeneration failed.";
+      if (msg.includes("Requested entity was not found.")) {
+        await (window as any).aistudio.openSelectKey();
+        setHasKey(true);
+      }
+      setError(msg);
+      setScenes(prev => prev.map(s => s.id === id ? { ...s, status: 'error', error: msg } : s));
     }
     setIsProcessing(false);
   };
@@ -81,16 +112,49 @@ const App: React.FC = () => {
       const newUrl = await editImageWithNudge(scene.imageUrl, nudge);
       setScenes(prev => prev.map(s => s.id === id ? { ...s, imageUrl: newUrl, status: 'completed' } : s));
     } catch (err: any) {
-      setError(err.message);
-      setScenes(prev => prev.map(s => s.id === id ? { ...s, status: 'error', error: err.message } : s));
+      const msg = err.message || "Edit failed.";
+      if (msg.includes("Requested entity was not found.")) {
+        await (window as any).aistudio.openSelectKey();
+        setHasKey(true);
+      }
+      setError(msg);
+      setScenes(prev => prev.map(s => s.id === id ? { ...s, status: 'error', error: msg } : s));
     }
     setIsProcessing(false);
   };
 
+  if (hasKey === false) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0c] flex items-center justify-center p-6">
+        <div className="max-w-md w-full bg-[#121216] border border-white/5 rounded-[3rem] p-12 text-center space-y-8 shadow-2xl">
+          <div className="w-20 h-20 bg-cyan-500/10 rounded-full flex items-center justify-center mx-auto">
+            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-cyan-500">
+              <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3m-3-3l-2.25-2.25"/>
+            </svg>
+          </div>
+          <div className="space-y-4">
+            <h2 className="text-2xl font-black uppercase tracking-tighter">System Offline</h2>
+            <p className="text-gray-500 text-sm leading-relaxed">
+              To begin production, you must connect a valid Google AI Studio API key from a paid project.
+            </p>
+          </div>
+          <button 
+            onClick={handleConnect}
+            className="w-full py-5 bg-cyan-600 hover:bg-cyan-500 text-white font-black uppercase tracking-widest rounded-full transition-all shadow-xl shadow-cyan-900/20"
+          >
+            Connect to AI Studio
+          </button>
+          <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noreferrer" className="block text-[10px] font-bold text-gray-600 uppercase tracking-widest hover:text-cyan-500 transition-colors">
+            Billing Documentation
+          </a>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#0a0a0c] text-white p-6 md:p-12 lg:p-20">
       <div className="max-w-6xl mx-auto space-y-16">
-        {/* Header */}
         <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 border-b border-white/5 pb-12">
           <div className="space-y-2">
             <div className="flex items-center gap-3">
@@ -105,11 +169,10 @@ const App: React.FC = () => {
         </header>
 
         <div className="grid lg:grid-cols-[340px_1fr] gap-20">
-          {/* Controls */}
           <aside className="space-y-10">
             <div className="space-y-8">
               <div className="space-y-4">
-                <label className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-600 px-2">Production Context</label>
+                <label className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-600 px-2">Style Protocol</label>
                 <div className="grid grid-cols-1 gap-2">
                   {STYLE_OPTIONS.map(style => (
                     <button
@@ -133,7 +196,7 @@ const App: React.FC = () => {
                 <textarea 
                   value={sentence1}
                   onChange={(e) => setSentence1(e.target.value)}
-                  placeholder="Sentence 1..."
+                  placeholder="The old man found a mysterious key..."
                   disabled={isProcessing}
                   className="w-full h-24 bg-white/5 border border-white/10 rounded-[2rem] p-6 text-sm resize-none outline-none focus:border-cyan-500/50 transition-colors disabled:opacity-50"
                 />
@@ -143,7 +206,7 @@ const App: React.FC = () => {
                 <textarea 
                   value={sentence2}
                   onChange={(e) => setSentence2(e.target.value)}
-                  placeholder="Sentence 2..."
+                  placeholder="The door opened to a void of screaming stars..."
                   disabled={isProcessing}
                   className="w-full h-24 bg-white/5 border border-white/10 rounded-[2rem] p-6 text-sm resize-none outline-none focus:border-cyan-500/50 transition-colors disabled:opacity-50"
                 />
@@ -161,7 +224,6 @@ const App: React.FC = () => {
             {error && <ErrorAlert message={error} />}
           </aside>
 
-          {/* Canvas */}
           <main className="grid md:grid-cols-2 gap-10">
             {scenes.length > 0 ? (
               scenes.map(scene => (
