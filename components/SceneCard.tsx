@@ -3,170 +3,123 @@ import React, { useState } from 'react';
 import { Scene } from '../types';
 
 interface SceneCardProps {
-    scene: Scene;
-    onRegenerate: (id: number) => void;
-    isGenerating: boolean;
-    onPromptChange: (id: number, newPrompt: string) => void;
-    onNudge: (id: number) => void;
-    onNudgePromptChange: (id: number, newNudgePrompt: string) => void;
-    aspectRatio: string;
+  scene: Scene;
+  onRegenerate: (id: number) => void;
+  onEdit: (id: number, nudge: string) => void;
+  isLocked: boolean;
 }
 
-export const SceneCard: React.FC<SceneCardProps> = ({ 
-    scene, onRegenerate, isGenerating, onPromptChange, onNudge, onNudgePromptChange, aspectRatio
-}) => {
-    const [isLightboxOpen, setIsLightboxOpen] = useState(false);
+export const SceneCard: React.FC<SceneCardProps> = ({ scene, onRegenerate, onEdit, isLocked }) => {
+  const [isEditing, setIsEditing] = useState(false);
+  const [nudgeText, setNudgeText] = useState('');
 
-    const handleDownload = () => {
-        // Handle both image and video downloads
-        const url = scene.imageUrl || scene.videoUrl;
-        if (!url) return;
-        const link = document.createElement('a');
-        link.href = url;
-        const extension = scene.videoUrl ? 'mp4' : 'jpeg';
-        link.download = `production-scene-${scene.id}.${extension}`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    };
-
-    const getAspectClass = () => {
-        switch (aspectRatio) {
-            case '1:1': return 'aspect-square';
-            case '9:16': return 'aspect-[9/16]';
-            case '16:9':
-            default: return 'aspect-video';
-        }
-    };
+  const handleExport = () => {
+    if (!scene.imageUrl) return;
     
-    return (
-        <>
-            <div className="bg-[#121216] rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col ring-1 ring-white/10 group transition-all hover:ring-white/20">
-                <div className={`${getAspectClass()} bg-black relative overflow-hidden flex items-center justify-center`}>
-                    {/* Display loading state if isLoading prop is set or based on scene status */}
-                    {(scene.isLoading || scene.status === 'expanding' || scene.status === 'rendering') && (
-                        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/90 backdrop-blur-xl text-center p-6">
-                            <div className="w-12 h-12 border-2 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin"></div>
-                            <p className="text-cyan-400 font-black mt-6 tracking-widest uppercase text-[10px]">
-                                Developing Visual Asset
-                            </p>
-                        </div>
-                    )}
-                    
-                    {scene.imageUrl ? (
-                        <div className="relative w-full h-full cursor-zoom-in" onClick={() => setIsLightboxOpen(true)}>
-                            <img 
-                                src={scene.imageUrl} 
-                                alt="Generated scene" 
-                                className="w-full h-full object-contain transition-all duration-700 group-hover:scale-[1.01]" 
-                            />
-                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center">
-                                <span className="bg-black/60 backdrop-blur-md px-5 py-2.5 rounded-full text-[10px] font-black uppercase tracking-[0.2em] border border-white/10 shadow-xl">Inspect Keyframe</span>
-                            </div>
-                        </div>
-                    ) : scene.videoUrl ? (
-                        <video 
-                            src={scene.videoUrl} 
-                            controls 
-                            autoPlay 
-                            loop 
-                            muted
-                            className="w-full h-full object-contain"
-                        />
-                    ) : (
-                        <div className="w-full h-full flex items-center justify-center bg-gray-950 italic text-gray-800 text-[10px] uppercase font-black tracking-widest">
-                            Awaiting Frame Generation
-                        </div>
-                    )}
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 1920;
+      canvas.height = 1920;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(img, 0, 0, 1920, 1920);
+        const link = document.createElement('a');
+        link.download = `scene-0${scene.id}-export.jpg`;
+        link.href = canvas.toDataURL('image/jpeg', 0.95);
+        link.click();
+      }
+    };
+    img.src = scene.imageUrl;
+  };
 
-                    <div className="absolute top-6 left-6 px-4 py-1.5 bg-black/80 backdrop-blur-md border border-white/10 rounded-full text-[10px] font-black text-white uppercase tracking-widest z-20">
-                        Frame 0{scene.id}
-                    </div>
-                </div>
+  const isLoading = scene.status === 'expanding' || scene.status === 'generating';
 
-                <div className="p-10 flex-grow flex flex-col space-y-8">
-                    <div>
-                        <h3 className="font-black text-[10px] text-cyan-500 uppercase tracking-[0.4em] mb-4">I. Production Script</h3>
-                        <p className="text-gray-200 text-lg italic font-light leading-relaxed">"{scene.originalSentence}"</p>
-                    </div>
+  return (
+    <div className="bg-[#121216] border border-white/5 rounded-[2rem] overflow-hidden flex flex-col group transition-all hover:border-white/10 shadow-2xl">
+      {/* Visual Area */}
+      <div className="aspect-square bg-black relative overflow-hidden">
+        {isLoading && (
+          <div className="absolute inset-0 z-20 bg-black/80 backdrop-blur-md flex flex-col items-center justify-center space-y-4">
+            <div className="w-10 h-10 border-2 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin"></div>
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-cyan-500 animate-pulse">
+              {scene.status === 'expanding' ? 'Expanding Vision' : 'Rendering Pixels'}
+            </span>
+          </div>
+        )}
 
-                    <div className="space-y-4">
-                        <div className="flex justify-between items-center">
-                            <h3 className="font-black text-[10px] text-purple-500 uppercase tracking-[0.4em]">II. Visual Directives</h3>
-                        </div>
-                        <textarea
-                            value={scene.generatedPrompt || ''}
-                            onChange={(e) => onPromptChange(scene.id, e.target.value)}
-                            disabled={isGenerating}
-                            className={`w-full h-28 p-6 bg-black/60 border rounded-3xl text-gray-400 text-sm focus:ring-1 focus:ring-purple-500 resize-none transition-all placeholder:text-gray-800 leading-relaxed scrollbar-hide ${
-                                scene.error ? 'border-red-500/50' : 'border-gray-800/50'
-                            }`}
-                            placeholder="Awaiting AI expansion..."
-                        />
-                    </div>
+        {scene.imageUrl ? (
+          <img src={scene.imageUrl} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" alt="Generated" />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center opacity-10">
+            <span className="text-[10px] font-black uppercase tracking-[0.5em]">Scene 0{scene.id}</span>
+          </div>
+        )}
+      </div>
 
-                    {(scene.imageUrl || scene.videoUrl) && (
-                        <div className="space-y-4">
-                            <h3 className="font-black text-[10px] text-amber-500 uppercase tracking-[0.4em]">III. Asset Refinement</h3>
-                            <div className="flex gap-2">
-                                <input 
-                                    type="text"
-                                    placeholder="Change lighting, add elements..."
-                                    value={scene.nudgePrompt || ''}
-                                    onChange={(e) => onNudgePromptChange(scene.id, e.target.value)}
-                                    className="flex-grow bg-black/60 border border-gray-800/50 rounded-2xl px-6 py-4 text-sm text-gray-300 outline-none focus:border-amber-500/50"
-                                />
-                                <button 
-                                    onClick={() => onNudge(scene.id)}
-                                    disabled={!scene.nudgePrompt || scene.isLoading || scene.status === 'expanding' || scene.status === 'rendering'}
-                                    className="px-8 py-4 bg-amber-500/10 text-amber-500 border border-amber-500/20 rounded-2xl text-[10px] font-black uppercase hover:bg-amber-500/20 disabled:opacity-30 transition-all"
-                                >
-                                    FIX
-                                </button>
-                            </div>
-                        </div>
-                    )}
+      {/* Content Area */}
+      <div className="p-6 space-y-6 flex-grow flex flex-col">
+        <div className="space-y-1">
+          <h4 className="text-[9px] font-black uppercase tracking-widest text-cyan-600">Original Concept</h4>
+          <p className="text-gray-400 text-xs leading-relaxed italic">"{scene.originalSentence}"</p>
+        </div>
 
-                    <div className="flex flex-wrap gap-4 pt-10 border-t border-gray-800/30">
-                        <button
-                            onClick={() => onRegenerate(scene.id)}
-                            disabled={isGenerating || !scene.generatedPrompt}
-                            className="flex-[2] py-6 px-8 bg-white text-black rounded-full text-[10px] font-black tracking-widest uppercase transition-all hover:bg-cyan-400 disabled:opacity-50 active:scale-95 shadow-xl"
-                        >
-                            {scene.error ? 'Retry Keyframe' : 'Regenerate'}
-                        </button>
-                        <button
-                            onClick={handleDownload}
-                            disabled={(!scene.imageUrl && !scene.videoUrl) || isGenerating}
-                            className="flex-1 py-6 bg-gray-900 hover:bg-gray-800 text-gray-300 rounded-full text-[10px] font-black uppercase tracking-widest border border-white/5 disabled:opacity-30 transition-all min-w-[100px]"
-                        >
-                            Export
-                        </button>
-                    </div>
-                </div>
-                {scene.error && <div className="px-10 pb-8 text-[10px] text-red-500 font-bold uppercase tracking-widest">{scene.error}</div>}
+        {isEditing && (
+          <div className="space-y-3 animate-in fade-in slide-in-from-bottom-2">
+             <input 
+              value={nudgeText}
+              onChange={(e) => setNudgeText(e.target.value)}
+              placeholder="e.g., More fog..."
+              className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-xs outline-none focus:border-cyan-500/50 transition-colors text-white"
+            />
+            <div className="flex gap-2">
+              <button 
+                onClick={() => { onEdit(scene.id, nudgeText); setIsEditing(false); }}
+                className="flex-1 py-2 bg-cyan-600/20 text-cyan-400 text-[10px] font-black uppercase rounded-lg border border-cyan-500/30"
+              >
+                Apply Edit
+              </button>
+              <button 
+                onClick={() => setIsEditing(false)}
+                className="px-4 py-2 bg-white/5 text-gray-500 text-[10px] font-black uppercase rounded-lg"
+              >
+                Cancel
+              </button>
             </div>
+          </div>
+        )}
 
-            {isLightboxOpen && scene.imageUrl && (
-                <div 
-                    className="fixed inset-0 z-[100] bg-black/98 backdrop-blur-2xl flex items-center justify-center p-6 md:p-16 animate-in fade-in zoom-in-95 duration-300 cursor-zoom-out"
-                    onClick={() => setIsLightboxOpen(false)}
-                >
-                    <div className="relative max-w-full max-h-full flex flex-col items-center">
-                        <img 
-                            src={scene.imageUrl} 
-                            alt="Full production frame" 
-                            className="max-w-full max-h-[80vh] object-contain shadow-[0_0_100px_rgba(0,0,0,0.5)] rounded-2xl border border-white/5" 
-                        />
-                        <div className="mt-12 text-center space-y-4">
-                            <h4 className="text-[10px] font-black uppercase tracking-[0.5em] text-cyan-500">Keyframe 0{scene.id}</h4>
-                            <div className="flex gap-4 justify-center mt-6">
-                                <button className="px-10 py-4 bg-white/5 border border-white/10 rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-white/10 transition-all">Close</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-        </>
-    );
+        <div className="mt-auto pt-4 border-t border-white/5 flex gap-2">
+          {/* Repeat Icon Button */}
+          <button 
+            disabled={isLocked || isLoading}
+            onClick={() => onRegenerate(scene.id)}
+            className="flex-shrink-0 p-3 bg-white/5 hover:bg-white/10 rounded-xl text-gray-400 transition-all disabled:opacity-20 active:scale-95"
+            title="Regenerate"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/>
+              <polyline points="21 3 21 8 16 8"/>
+            </svg>
+          </button>
+          
+          <button 
+            disabled={isLocked || isLoading || !scene.imageUrl}
+            onClick={() => setIsEditing(true)}
+            className="flex-1 py-3 bg-white/5 hover:bg-white/10 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all disabled:opacity-20"
+          >
+            Edit
+          </button>
+          <button 
+            disabled={isLocked || isLoading || !scene.imageUrl}
+            onClick={handleExport}
+            className="flex-1 py-3 bg-cyan-600 hover:bg-cyan-500 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all disabled:opacity-20"
+          >
+            Export
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 };

@@ -10,7 +10,8 @@ export const VideoCard: React.FC<VideoCardProps> = ({ scene }) => {
     return (
         <div className="bg-[#121216] rounded-[2.5rem] overflow-hidden border border-white/5 shadow-2xl transition-all hover:border-white/20 flex flex-col h-full">
             <div className="aspect-video bg-black relative flex items-center justify-center overflow-hidden">
-                {scene.status === 'rendering' || scene.status === 'expanding' ? (
+                {/* Fixed: Replaced 'rendering' with 'generating' to align with Scene status type (Line 13) */}
+                {scene.status === 'generating' || scene.status === 'expanding' ? (
                     <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/80 backdrop-blur-md">
                         <div className="w-10 h-10 border-2 border-purple-500/20 border-t-purple-500 rounded-full animate-spin"></div>
                         <p className="mt-4 text-[10px] font-black uppercase tracking-[0.3em] text-purple-400 animate-pulse">
@@ -19,13 +20,11 @@ export const VideoCard: React.FC<VideoCardProps> = ({ scene }) => {
                     </div>
                 ) : null}
 
-                {scene.videoUrl ? (
-                    <video 
-                        src={scene.videoUrl} 
-                        controls 
-                        autoPlay 
-                        loop 
-                        muted
+                {/* Fixed: Replaced missing videoUrl with imageUrl and <video> with <img> to match Scene interface (Line 22, 24) */}
+                {scene.imageUrl ? (
+                    <img 
+                        src={scene.imageUrl} 
+                        alt={`Scene ${scene.id}`}
                         className="w-full h-full object-cover"
                     />
                 ) : (
@@ -45,10 +44,11 @@ export const VideoCard: React.FC<VideoCardProps> = ({ scene }) => {
                     <p className="text-gray-300 text-sm italic font-light leading-relaxed">"{scene.originalSentence}"</p>
                 </div>
 
-                {scene.generatedPrompt && (
+                {/* Fixed: Replaced generatedPrompt with expandedPrompt (Line 47, 50) */}
+                {scene.expandedPrompt && (
                     <div>
                         <h4 className="text-[9px] font-black uppercase tracking-[0.3em] text-purple-500 mb-2">Technical Directive</h4>
-                        <p className="text-gray-500 text-[11px] leading-relaxed line-clamp-3">{scene.generatedPrompt}</p>
+                        <p className="text-gray-500 text-[11px] leading-relaxed line-clamp-3">{scene.expandedPrompt}</p>
                     </div>
                 )}
 

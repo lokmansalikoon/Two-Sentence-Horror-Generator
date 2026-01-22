@@ -1,181 +1,191 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Scene } from './types';
-import { 
-    generateExpandedPrompt,
-    generateVideoFromPrompt
-} from './services/geminiService';
-import { VideoCard } from './components/VideoCard';
+import { expandPrompt, generateImage, editImageWithNudge } from './services/geminiService';
+import { SceneCard } from './components/SceneCard';
 import { ErrorAlert } from './components/ErrorAlert';
 
-const styleOptions = [
-    { name: 'Cinematic Movie', prompt: 'High-budget 35mm film photography, cinematic lighting, dramatic atmosphere, highly detailed textures.' },
-    { name: 'Grainy Found Footage', prompt: 'Grainy low-quality found footage, VHS artifacts, raw horror aesthetic.' },
-    { name: 'Surreal Horror', prompt: 'Surreal horror aesthetic, unsettling dreamlike imagery, distorted perspectives.' },
-    { name: 'Junji Ito Manga', prompt: 'Detailed black and white manga art style, intricate linework, body horror elements.' }
+const STYLE_OPTIONS = [
+  "Noir Horror",
+  "Found Footage",
+  "Junji Ito Manga",
+  "Psychological/Surreal Horror"
 ];
 
 const App: React.FC = () => {
-    const [sentence1, setSentence1] = useState<string>('');
-    const [sentence2, setSentence2] = useState<string>('');
-    const [aspectRatio, setAspectRatio] = useState<string>('16:9');
-    const [style, setStyle] = useState<string>(styleOptions[0].prompt);
-    const [scenes, setScenes] = useState<Scene[]>([]);
-    const [isProducing, setIsProducing] = useState<boolean>(false);
-    const [error, setError] = useState<string | null>(null);
-    const [isKeyReady, setIsKeyReady] = useState<boolean>(false);
-    const [isCheckingKey, setIsCheckingKey] = useState<boolean>(true);
+  const [sentence1, setSentence1] = useState('');
+  const [sentence2, setSentence2] = useState('');
+  const [selectedStyle, setSelectedStyle] = useState(STYLE_OPTIONS[0]);
+  const [scenes, setScenes] = useState<Scene[]>([]);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-    useEffect(() => {
-        const verifyAccess = async () => {
-            // Priority 1: If the environment already has a key, we are good to go.
-            if (process.env.API_KEY && process.env.API_KEY !== "") {
-                setIsKeyReady(true);
-                setIsCheckingKey(false);
-                return;
-            }
-
-            // Priority 2: Safely check for AI Studio helper (Local/Preview)
-            try {
-                const aistudio = (window as any).aistudio;
-                if (aistudio && typeof aistudio.hasSelectedApiKey === 'function') {
-                    const hasKey = await aistudio.hasSelectedApiKey();
-                    setIsKeyReady(hasKey);
-                }
-            } catch (e) {
-                console.warn("AI Studio key check deferred:", e);
-            } finally {
-                setIsCheckingKey(false);
-            }
-        };
-        verifyAccess();
-    }, []);
-
-    const handleConnect = async () => {
-        setError(null);
-        try {
-            const aistudio = (window as any).aistudio;
-            if (aistudio && typeof aistudio.openSelectKey === 'function') {
-                await aistudio.openSelectKey();
-                // Assume success to avoid race conditions
-                setIsKeyReady(true);
-            } else {
-                // If we're here, process.env.API_KEY was missing and window.aistudio is missing.
-                setError("API Key not found. Please ensure you are running in a supported environment or set the API_KEY environment variable.");
-            }
-        } catch (e: any) {
-            setError(e.message || "Failed to connect to API key selector.");
-        }
-    };
-
-    const runProduction = async () => {
-        if (!sentence1.trim() || !sentence2.trim()) {
-            setError("Both sentences are required for the workflow.");
-            return;
-        }
-
-        setError(null);
-        setIsProducing(true);
-
-        const initialScenes: Scene[] = [
-            { id: 1, originalSentence: sentence1, generatedPrompt: null, videoUrl: null, status: 'idle', error: null },
-            { id: 2, originalSentence: sentence2, generatedPrompt: null, videoUrl: null, status: 'idle', error: null }
-        ];
-        setScenes(initialScenes);
-
-        for (let i = 0; i < initialScenes.length; i++) {
-            const currentScene = initialScenes[i];
-            try {
-                setScenes(prev => prev.map(s => s.id === currentScene.id ? { ...s, status: 'expanding' } : s));
-                const expanded = await generateExpandedPrompt(currentScene.originalSentence, style);
-                
-                setScenes(prev => prev.map(s => s.id === currentScene.id ? { ...s, generatedPrompt: expanded, status: 'rendering' } : s));
-                const videoUrl = await generateVideoFromPrompt(expanded, aspectRatio);
-                
-                setScenes(prev => prev.map(s => s.id === currentScene.id ? { ...s, videoUrl, status: 'completed' } : s));
-            } catch (e: any) {
-                const errorMessage = e.message || "Production error occurred.";
-                setScenes(prev => prev.map(s => s.id === currentScene.id ? { ...s, status: 'error', error: errorMessage } : s));
-                setError(`Scene ${currentScene.id} error: ${errorMessage}`);
-                break; 
-            }
-        }
-        setIsProducing(false);
-    };
-
-    if (isCheckingKey) {
-        return <div className="min-h-screen bg-black flex items-center justify-center text-white/20 uppercase text-[10px] tracking-widest">Checking Authorization...</div>;
+  const runAutomation = async () => {
+    if (!sentence1.trim() || !sentence2.trim()) {
+      setError("Please provide both sentences to begin the workflow.");
+      return;
     }
+    setError(null);
+    setIsProcessing(true);
 
-    if (!isKeyReady) {
-        return (
-            <div className="min-h-screen bg-[#0a0a0c] flex items-center justify-center p-6">
-                <div className="max-w-md w-full bg-[#121216] border border-white/5 rounded-[3rem] p-12 text-center space-y-8">
-                    <h1 className="text-3xl font-black tracking-tighter uppercase">DIRECTOR.AI</h1>
-                    <p className="text-gray-500 text-sm">To begin production, connect a valid Gemini API key.</p>
-                    <button onClick={handleConnect} className="w-full py-5 bg-white text-black font-black uppercase text-[10px] tracking-widest rounded-full hover:bg-purple-400 transition-all active:scale-95 shadow-2xl">
-                        Connect Project Key
+    const targetScenes: Scene[] = [
+      { id: 1, originalSentence: sentence1, expandedPrompt: null, imageUrl: null, status: 'idle', error: null },
+      { id: 2, originalSentence: sentence2, expandedPrompt: null, imageUrl: null, status: 'idle', error: null }
+    ];
+    setScenes(targetScenes);
+
+    for (const scene of targetScenes) {
+      try {
+        setScenes(prev => prev.map(s => s.id === scene.id ? { ...s, status: 'expanding' } : s));
+        const expanded = await expandPrompt(scene.originalSentence, selectedStyle);
+        
+        setScenes(prev => prev.map(s => s.id === scene.id ? { ...s, expandedPrompt: expanded, status: 'generating' } : s));
+        const url = await generateImage(expanded);
+        
+        setScenes(prev => prev.map(s => s.id === scene.id ? { ...s, imageUrl: url, status: 'completed' } : s));
+      } catch (err: any) {
+        const msg = err.message || "Production halted due to an internal error.";
+        setScenes(prev => prev.map(s => s.id === scene.id ? { ...s, status: 'error', error: msg } : s));
+        setError(msg);
+        break;
+      }
+    }
+    setIsProcessing(false);
+  };
+
+  const handleRegenerate = async (id: number) => {
+    const scene = scenes.find(s => s.id === id);
+    if (!scene) return;
+    
+    setIsProcessing(true);
+    try {
+      setScenes(prev => prev.map(s => s.id === id ? { ...s, status: 'expanding', error: null } : s));
+      const expanded = await expandPrompt(scene.originalSentence, selectedStyle);
+      setScenes(prev => prev.map(s => s.id === id ? { ...s, expandedPrompt: expanded, status: 'generating' } : s));
+      const url = await generateImage(expanded);
+      setScenes(prev => prev.map(s => s.id === id ? { ...s, imageUrl: url, status: 'completed' } : s));
+    } catch (err: any) {
+      setError(err.message);
+      setScenes(prev => prev.map(s => s.id === id ? { ...s, status: 'error', error: err.message } : s));
+    }
+    setIsProcessing(false);
+  };
+
+  const handleEdit = async (id: number, nudge: string) => {
+    const scene = scenes.find(s => s.id === id);
+    if (!scene || !scene.imageUrl || !nudge) return;
+
+    setIsProcessing(true);
+    try {
+      setScenes(prev => prev.map(s => s.id === id ? { ...s, status: 'generating' } : s));
+      const newUrl = await editImageWithNudge(scene.imageUrl, nudge);
+      setScenes(prev => prev.map(s => s.id === id ? { ...s, imageUrl: newUrl, status: 'completed' } : s));
+    } catch (err: any) {
+      setError(err.message);
+      setScenes(prev => prev.map(s => s.id === id ? { ...s, status: 'error', error: err.message } : s));
+    }
+    setIsProcessing(false);
+  };
+
+  return (
+    <div className="min-h-screen bg-[#0a0a0c] text-white p-6 md:p-12 lg:p-20">
+      <div className="max-w-6xl mx-auto space-y-16">
+        {/* Header */}
+        <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 border-b border-white/5 pb-12">
+          <div className="space-y-2">
+            <div className="flex items-center gap-3">
+              <div className="w-3 h-3 bg-cyan-500 rounded-full animate-pulse" />
+              <h1 className="text-3xl font-black uppercase tracking-tighter">Director.AI</h1>
+            </div>
+            <p className="text-gray-500 text-[10px] font-bold uppercase tracking-[0.5em]">Economy Production Workflow</p>
+          </div>
+          <div className="flex items-center gap-4 bg-white/5 px-6 py-3 rounded-full border border-white/10">
+            <span className="text-[10px] font-black uppercase tracking-widest text-cyan-500">Output: 1920x1920 JPG</span>
+          </div>
+        </header>
+
+        <div className="grid lg:grid-cols-[340px_1fr] gap-20">
+          {/* Controls */}
+          <aside className="space-y-10">
+            <div className="space-y-8">
+              <div className="space-y-4">
+                <label className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-600 px-2">Production Context</label>
+                <div className="grid grid-cols-1 gap-2">
+                  {STYLE_OPTIONS.map(style => (
+                    <button
+                      key={style}
+                      onClick={() => setSelectedStyle(style)}
+                      disabled={isProcessing}
+                      className={`text-left px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all border ${
+                        selectedStyle === style 
+                        ? 'bg-cyan-600/10 border-cyan-500 text-cyan-400' 
+                        : 'bg-white/5 border-transparent text-gray-500 hover:bg-white/10'
+                      }`}
+                    >
+                      {style}
                     </button>
-                    {error && <ErrorAlert message={error} />}
+                  ))}
                 </div>
+              </div>
+
+              <div className="space-y-4">
+                <label className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-600 px-2">Scene 01 Ingest</label>
+                <textarea 
+                  value={sentence1}
+                  onChange={(e) => setSentence1(e.target.value)}
+                  placeholder="Sentence 1..."
+                  disabled={isProcessing}
+                  className="w-full h-24 bg-white/5 border border-white/10 rounded-[2rem] p-6 text-sm resize-none outline-none focus:border-cyan-500/50 transition-colors disabled:opacity-50"
+                />
+              </div>
+              <div className="space-y-4">
+                <label className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-600 px-2">Scene 02 Ingest</label>
+                <textarea 
+                  value={sentence2}
+                  onChange={(e) => setSentence2(e.target.value)}
+                  placeholder="Sentence 2..."
+                  disabled={isProcessing}
+                  className="w-full h-24 bg-white/5 border border-white/10 rounded-[2rem] p-6 text-sm resize-none outline-none focus:border-cyan-500/50 transition-colors disabled:opacity-50"
+                />
+              </div>
             </div>
-        );
-    }
 
-    return (
-        <div className="min-h-screen bg-[#0a0a0c] text-white p-6 md:p-12 pb-24">
-            <div className="max-w-[1400px] mx-auto space-y-16">
-                <header className="flex flex-col md:flex-row items-center justify-between border-b border-white/5 pb-12 gap-6">
-                    <div>
-                        <h1 className="text-6xl font-black tracking-tighter uppercase bg-clip-text text-transparent bg-gradient-to-r from-purple-500 to-cyan-500">DIRECTOR.AI</h1>
-                        <p className="text-gray-500 text-sm mt-2 uppercase tracking-widest italic font-light">Workflow Automation</p>
-                    </div>
-                    <div className="flex gap-4">
-                        <select value={aspectRatio} onChange={e => setAspectRatio(e.target.value)} className="bg-white/5 border border-white/10 rounded-full px-6 py-2 text-[10px] font-black uppercase tracking-widest outline-none">
-                            <option value="16:9">16:9 Widescreen</option>
-                            <option value="9:16">9:16 Portrait</option>
-                        </select>
-                    </div>
-                </header>
+            <button 
+              disabled={isProcessing}
+              onClick={runAutomation}
+              className="w-full py-6 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-20 text-white font-black uppercase tracking-[0.2em] rounded-full transition-all shadow-2xl shadow-cyan-900/30 active:scale-95"
+            >
+              {isProcessing ? "Producing..." : "Start Sequence"}
+            </button>
 
-                <div className="grid lg:grid-cols-[400px_1fr] gap-16 items-start">
-                    <aside className="space-y-10 bg-[#121216] p-10 rounded-[2.5rem] border border-white/5 sticky top-12">
-                        <div className="space-y-6">
-                            <h2 className="text-[10px] font-black uppercase tracking-widest text-cyan-500">Script Ingest</h2>
-                            <textarea value={sentence1} onChange={e => setSentence1(e.target.value)} placeholder="First sentence..." className="w-full h-24 bg-black rounded-3xl p-6 text-sm border border-white/5 focus:border-purple-500 transition-all resize-none outline-none" />
-                            <textarea value={sentence2} onChange={e => setSentence2(e.target.value)} placeholder="Second sentence..." className="w-full h-24 bg-black rounded-3xl p-6 text-sm border border-white/5 focus:border-purple-500 transition-all resize-none outline-none" />
-                        </div>
+            {error && <ErrorAlert message={error} />}
+          </aside>
 
-                        <div className="space-y-6">
-                            <h2 className="text-[10px] font-black uppercase tracking-widest text-purple-500">Aesthetic</h2>
-                            <div className="grid grid-cols-1 gap-3">
-                                {styleOptions.map(opt => (
-                                    <button key={opt.name} onClick={() => setStyle(opt.prompt)} className={`py-4 px-6 rounded-2xl text-[10px] font-black uppercase tracking-widest border transition-all ${style === opt.prompt ? 'bg-white text-black border-white' : 'bg-transparent text-gray-500 border-white/10 hover:border-white/20'}`}>
-                                        {opt.name}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-
-                        <button onClick={runProduction} disabled={isProducing} className="w-full py-6 bg-cyan-500 text-black font-black uppercase tracking-[0.3em] text-[10px] rounded-full hover:bg-white transition-all disabled:bg-gray-800 disabled:text-gray-500 active:scale-95 shadow-[0_0_30px_rgba(6,182,212,0.2)]">
-                            {isProducing ? "Producing..." : "Start Production"}
-                        </button>
-                        {error && <ErrorAlert message={error} />}
-                    </aside>
-
-                    <main className="grid md:grid-cols-2 gap-8">
-                        {scenes.length > 0 ? scenes.map(scene => (
-                            <VideoCard key={scene.id} scene={scene} />
-                        )) : (
-                            <div className="col-span-2 h-[400px] border border-dashed border-white/5 rounded-[3rem] flex items-center justify-center">
-                                <span className="text-[10px] font-black text-white/10 uppercase tracking-[1em]">Awaiting Script</span>
-                            </div>
-                        )}
-                    </main>
+          {/* Canvas */}
+          <main className="grid md:grid-cols-2 gap-10">
+            {scenes.length > 0 ? (
+              scenes.map(scene => (
+                <SceneCard 
+                  key={scene.id} 
+                  scene={scene} 
+                  onRegenerate={handleRegenerate}
+                  onEdit={handleEdit}
+                  isLocked={isProcessing}
+                />
+              ))
+            ) : (
+              <div className="col-span-2 h-[500px] border border-dashed border-white/10 rounded-[4rem] flex flex-col items-center justify-center opacity-20 space-y-4">
+                <div className="w-20 h-20 border-4 border-white rounded-full flex items-center justify-center">
+                  <div className="w-8 h-8 bg-white rounded-sm" />
                 </div>
-            </div>
+                <span className="text-[10px] font-black uppercase tracking-[1em]">Awaiting Data</span>
+              </div>
+            )}
+          </main>
         </div>
-    );
+      </div>
+    </div>
+  );
 };
 
 export default App;

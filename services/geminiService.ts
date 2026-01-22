@@ -1,48 +1,79 @@
 
 import { GoogleGenAI } from "@google/genai";
 
-function getApiKey() {
-    const key = process.env.API_KEY;
-    if (!key) {
-        throw new Error("API_KEY not found.");
-    }
-    return key;
-}
+/**
+ * Expands a simple sentence into a rich visual prompt based on a specific style protocol.
+ */
+export async function expandPrompt(sentence: string, style: string): Promise<string> {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  
+  const styleInstructions: Record<string, string> = {
+    "Noir Horror": "high-contrast film noir horror, deep shadows, dramatic chiaroscuro lighting, grainy monochrome or heavily desaturated tones, rainy urban atmosphere.",
+    "Found Footage": "grainy VHS found footage horror aesthetic, shaky camera, surveillance camera quality, low-light digital noise, eerie realism, timestamp on screen.",
+    "Junji Ito Manga": "intricate black and white ink manga art in the style of Junji Ito, fine line work, body horror elements, spirals, dramatic hatching, uncanny facial expressions.",
+    "Psychological/Surreal Horror": "surreal psychological horror, distorted reality, dreamlike uncanny atmosphere, symbolic imagery, vibrant but unsettling color palette, melting environments."
+  };
 
-export async function generateExpandedPrompt(sentence: string, style: string): Promise<string> {
-    const ai = new GoogleGenAI({ apiKey: getApiKey() });
-    const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: `Expand this sentence into a single paragraph of dense visual descriptions for a high-end cinema camera. 
-Style: ${style}. 
-Avoid forbidden content. Focus on texture, lighting, and specific camera movement.
-Sentence: "${sentence}"`,
-    });
-    return response.text || "";
-}
+  const instruction = styleInstructions[style] || "cinematic cinematic visual description.";
 
-export async function generateVideoFromPrompt(prompt: string, aspectRatio: string): Promise<string> {
-    const ai = new GoogleGenAI({ apiKey: getApiKey() });
+  const response = await ai.models.generateContent({
+    model: 'gemini-flash-lite-latest',
+    contents: `Task: Create a visual description for an image generator.
+    Style Protocol: ${style}
+    Visual Directives: ${instruction}
+    Source Sentence: "${sentence}"
     
-    let operation = await ai.models.generateVideos({
-        model: 'veo-3.1-fast-generate-preview',
-        prompt: prompt,
-        config: {
-            numberOfVideos: 1,
-            resolution: '720p',
-            aspectRatio: aspectRatio as any
-        }
-    });
+    Constraint: Keep the description under 60 words and focus on textures and lighting.`,
+  });
+  return response.text || "";
+}
 
-    // Poll for completion
-    while (!operation.done) {
-        await new Promise(resolve => setTimeout(resolve, 5000));
-        operation = await ai.operations.getVideosOperation({ operation: operation });
-    }
+/**
+ * Generates a 1:1 image using the budget-friendly gemini-2.5-flash-image model.
+ */
+export async function generateImage(prompt: string): Promise<string> {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const response = await ai.models.generateContent({
+    model: 'gemini-2.5-flash-image',
+    contents: { parts: [{ text: prompt }] },
+    config: {
+      imageConfig: {
+        aspectRatio: "1:1"
+      }
+    },
+  });
 
-    const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
-    if (!downloadLink) throw new Error("Video generation failed to return a link.");
+  const part = response.candidates[0].content.parts.find(p => p.inlineData);
+  if (!part?.inlineData) throw new Error("Image generation failed: No image data returned.");
+  
+  return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+}
 
-    // Append API Key to the download link as per documentation
-    return `${downloadLink}&key=${getApiKey()}`;
+/**
+ * Edits an existing image based on a nudge prompt using gemini-2.5-flash-image.
+ */
+export async function editImageWithNudge(base64Image: string, nudge: string): Promise<string> {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const base64Data = base64Image.split(',')[1];
+  const mimeType = base64Image.split(';')[0].split(':')[1];
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-2.5-flash-image',
+    contents: {
+      parts: [
+        { inlineData: { data: base64Data, mimeType: mimeType } },
+        { text: `Apply these changes to the image: ${nudge}` }
+      ]
+    },
+    config: {
+      imageConfig: {
+        aspectRatio: "1:1"
+      }
+    },
+  });
+
+  const part = response.candidates[0].content.parts.find(p => p.inlineData);
+  if (!part?.inlineData) throw new Error("Image edit failed: No image data returned.");
+  
+  return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
 }
