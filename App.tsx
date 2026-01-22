@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Scene } from './types';
 import { 
     generatePromptForSentenceStream, 
@@ -11,11 +11,10 @@ import { ErrorAlert } from './components/ErrorAlert';
 
 const styleOptions = [
     { name: 'Cinematic Movie', prompt: 'High-budget 35mm film photography, cinematic lighting, dramatic atmosphere, highly detailed textures, shallow depth of field.' },
-    { name: 'Grainy Found Footage', prompt: 'Grainy low-quality found footage, VHS artifacts, high ISO noise, handheld camera shake, flashlight-only lighting, wide-angle distortion, raw horror aesthetic.' },
-    { name: 'Junji Ito Manga', prompt: 'Junji Ito manga art style, intricate black and white ink line art, surreal anatomical transformations, cosmic dread, obsessive fine hatching, spiral patterns, high contrast, atmospheric psychological tension.' },
-    { name: 'Dark Surrealism', prompt: 'Dark surrealist art style, biomechanical textures, haunting desolate landscapes, organic decay, muted earthy and sickly tones, ethereal fog, unsettling atmosphere, inspired by Beksinski.' },
-    { name: 'Claymation / Stop-Motion', prompt: 'Handcrafted claymation style, tactile clay textures, miniature sets, visible fingerprints, quirky stop-motion movement.' },
-    { name: 'Noir Graphic Novel', prompt: 'High-contrast black and white ink drawing, deep shadows, gritty atmosphere, Mike Mignola style.' }
+    { name: 'Grainy Found Footage', prompt: 'Grainy low-quality found footage, VHS artifacts, high ISO noise, handheld camera shake, flashlight-only lighting, raw horror aesthetic.' },
+    { name: 'Dark Surrealism', prompt: 'Dark surrealist art style, biomechanical textures, haunting desolate landscapes, organic decay, muted earthy and sickly tones, ethereal fog.' },
+    { name: 'Surreal Horror', prompt: 'Surreal horror aesthetic, unsettling dreamlike imagery, distorted perspectives, liminal spaces, uncanny faces, muted color palette, psychological dread, abstract terrors.' },
+    { name: 'Junji Ito Manga', prompt: 'Detailed black and white manga art style, intricate linework, body horror elements, high contrast, traditional ink drawing, grotesque patterns, haunting atmosphere, Junji Ito aesthetic.' }
 ];
 
 const App: React.FC = () => {
@@ -26,41 +25,6 @@ const App: React.FC = () => {
     const [scenes, setScenes] = useState<Scene[]>([]);
     const [isLoading, setIsLoading] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
-    const [isKeyInitialized, setIsKeyInitialized] = useState<boolean>(true);
-
-    const checkApiKeyState = useCallback(async () => {
-        // If hardcoded/platform key exists, we're good
-        if (process.env.API_KEY && process.env.API_KEY !== 'undefined' && process.env.API_KEY !== '') {
-            setIsKeyInitialized(true);
-            return true;
-        }
-        
-        // Otherwise check AI Studio helper
-        if (window.aistudio) {
-            const hasKey = await window.aistudio.hasSelectedApiKey();
-            setIsKeyInitialized(hasKey);
-            return hasKey;
-        }
-        
-        setIsKeyInitialized(false);
-        return false;
-    }, []);
-
-    useEffect(() => {
-        checkApiKeyState();
-    }, [checkApiKeyState]);
-
-    const handleSelectKey = async () => {
-        if (window.aistudio) {
-            try {
-                await window.aistudio.openSelectKey();
-                setIsKeyInitialized(true);
-                setError(null);
-            } catch (e) {
-                console.error("Failed to open key selector", e);
-            }
-        }
-    };
 
     const handlePromptChange = (sceneId: number, newPrompt: string) => {
         setScenes(prev => prev.map(s => s.id === sceneId ? { ...s, generatedPrompt: newPrompt } : s));
@@ -71,7 +35,9 @@ const App: React.FC = () => {
     };
 
     const handleGenerate = useCallback(async () => {
-        if (!sentence1.trim() || !sentence2.trim()) {
+        const s1 = sentence1.trim();
+        const s2 = sentence2.trim();
+        if (!s1 || !s2) {
             setError("Please enter two sentences for your storyboards.");
             return;
         }
@@ -79,7 +45,7 @@ const App: React.FC = () => {
         setError(null);
         setIsLoading(true);
 
-        const initialScenes: Scene[] = [sentence1, sentence2].map((text, i) => ({
+        const initialScenes: Scene[] = [s1, s2].map((text, i) => ({
             id: i + 1,
             originalSentence: text,
             generatedPrompt: null,
@@ -102,13 +68,8 @@ const App: React.FC = () => {
                 setScenes(prev => prev.map(s => s.id === scene.id ? { ...s, imageUrl, isLoading: false } : s));
             }
         } catch (e: any) {
-            if (e.message === "API_KEY_MISSING" || e.message.includes("API Key") || e.message.includes("entity was not found")) {
-                setIsKeyInitialized(false);
-                setError("API Connection required. Please click the button below.");
-            } else {
-                setError(e.message || "Storyboard generation failed.");
-            }
-            setScenes(prev => prev.map(s => s.isLoading ? { ...s, isLoading: false, error: 'Failed' } : s));
+            setError(e.message || "Failed to generate visual assets.");
+            setScenes(prev => prev.map(s => s.isLoading ? { ...s, isLoading: false, error: 'Production Delayed' } : s));
         } finally {
             setIsLoading(false);
         }
@@ -138,46 +99,15 @@ const App: React.FC = () => {
         }
     };
 
-    if (!isKeyInitialized) {
-        return (
-            <div className="min-h-screen bg-[#0a0a0c] flex items-center justify-center p-6">
-                <div className="max-w-md w-full bg-[#121216] border border-white/10 rounded-[3rem] p-12 text-center space-y-8 shadow-2xl">
-                    <div className="space-y-4">
-                        <div className="w-16 h-16 bg-cyan-500/10 border border-cyan-500/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-cyan-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-                            </svg>
-                        </div>
-                        <h2 className="text-xl font-black uppercase tracking-tighter text-white">Initialize Production</h2>
-                        <p className="text-gray-500 text-sm leading-relaxed">
-                            To use ASSET.STUDIO, you must connect a valid Gemini API Key from your Google AI Studio account.
-                        </p>
-                    </div>
-                    <button 
-                        onClick={handleSelectKey}
-                        className="w-full py-6 bg-white text-black font-black uppercase tracking-[0.2em] text-[10px] rounded-full hover:bg-cyan-400 transition-all shadow-xl shadow-cyan-500/10 active:scale-95"
-                    >
-                        Connect API Key
-                    </button>
-                    <div className="pt-4">
-                        <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noreferrer" className="text-[9px] text-gray-700 uppercase font-bold tracking-widest hover:text-gray-500 transition-colors">
-                            Billing Documentation
-                        </a>
-                    </div>
-                </div>
-            </div>
-        );
-    }
-
     return (
-        <div className="min-h-screen bg-[#0a0a0c] text-gray-100 font-sans p-6 sm:p-12 pb-32 selection:bg-cyan-500/30">
+        <div className="min-h-screen bg-[#0a0a0c] text-gray-100 font-sans p-6 sm:p-12 pb-32 selection:bg-purple-500/30">
             <div className="max-w-[1400px] mx-auto space-y-12">
                 <header className="flex flex-col md:flex-row items-center justify-between gap-6 border-b border-white/5 pb-12">
                     <div className="text-center md:text-left">
-                        <h1 className="text-6xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-indigo-400 to-purple-500 uppercase">
-                            ASSET.STUDIO
+                        <h1 className="text-6xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-indigo-400 to-cyan-500 uppercase">
+                            DIRECTOR.AI
                         </h1>
-                        <p className="text-gray-500 text-lg mt-3 font-light tracking-wide italic">Automated Storyboard Production</p>
+                        <p className="text-gray-500 text-lg mt-3 font-light tracking-wide italic">Automated Storyboarding Workflow</p>
                     </div>
                 </header>
 
@@ -187,16 +117,16 @@ const App: React.FC = () => {
                             <h2 className="text-[10px] font-black uppercase tracking-[0.4em] text-cyan-500">I. Script Input</h2>
                             <div className="space-y-4">
                                 <textarea placeholder="Opening scene..." value={sentence1} onChange={e => setSentence1(e.target.value)}
-                                    className="w-full h-24 bg-black/40 border border-white/5 rounded-3xl p-6 text-sm focus:ring-1 focus:ring-cyan-500 outline-none transition-all placeholder:text-gray-800"
+                                    className="w-full h-24 bg-black/40 border border-white/5 rounded-3xl p-6 text-sm focus:ring-1 focus:ring-purple-500 outline-none transition-all"
                                 />
                                 <textarea placeholder="Conclusion..." value={sentence2} onChange={e => setSentence2(e.target.value)}
-                                    className="w-full h-24 bg-black/40 border border-white/5 rounded-3xl p-6 text-sm focus:ring-1 focus:ring-cyan-500 outline-none transition-all placeholder:text-gray-800"
+                                    className="w-full h-24 bg-black/40 border border-white/5 rounded-3xl p-6 text-sm focus:ring-1 focus:ring-purple-500 outline-none transition-all"
                                 />
                             </div>
                         </div>
 
                         <div className="space-y-6 border-t border-white/5 pt-8">
-                            <h2 className="text-[10px] font-black uppercase tracking-[0.4em] text-purple-500">II. Artistic Direction</h2>
+                            <h2 className="text-[10px] font-black uppercase tracking-[0.4em] text-purple-500">II. Style & Format</h2>
                             <div className="grid gap-4">
                                 <select value={style} onChange={e => setStyle(e.target.value)}
                                     className="w-full bg-black/40 border border-white/5 rounded-2xl p-4 text-xs text-gray-400 cursor-pointer"
@@ -206,40 +136,37 @@ const App: React.FC = () => {
                                 <select value={aspectRatio} onChange={e => setAspectRatio(e.target.value)}
                                     className="w-full bg-black/40 border border-white/5 rounded-2xl p-4 text-xs text-gray-400 cursor-pointer"
                                 >
-                                    <option value="16:9">16:9 Cinematic</option>
-                                    <option value="9:16">9:16 Portrait</option>
-                                    <option value="1:1">1:1 Square</option>
+                                    <option value="16:9">Widescreen (16:9)</option>
+                                    <option value="9:16">Portrait (9:16)</option>
+                                    <option value="1:1">Square (1:1)</option>
                                 </select>
                             </div>
                         </div>
 
                         <button onClick={handleGenerate} disabled={isLoading}
-                            className="w-full py-6 bg-white text-black font-black uppercase tracking-[0.3em] text-[10px] rounded-full hover:bg-cyan-400 transition-all shadow-2xl shadow-cyan-500/10"
+                            className="w-full py-6 bg-white text-black font-black uppercase tracking-[0.3em] text-[10px] rounded-full hover:bg-purple-400 transition-all shadow-2xl active:scale-95"
                         >
-                            {isLoading ? "Drafting Storyboard..." : "Start Storyboard"}
+                            {isLoading ? "Drafting Visuals..." : "Begin Production"}
                         </button>
-                        
                         {error && <ErrorAlert message={error} />}
                     </aside>
 
                     <section className="space-y-12">
-                        <div className="grid md:grid-cols-2 gap-8">
-                            {scenes.length > 0 ? (
-                                scenes.map(scene => (
-                                    <SceneCard 
-                                        key={scene.id} 
-                                        scene={scene}
-                                        isGenerating={isLoading}
-                                        onPromptChange={handlePromptChange}
-                                        onRegenerate={handleRegenerateImage} 
-                                        onNudge={handleNudge}
-                                        onNudgePromptChange={handleNudgePromptChange}
-                                        aspectRatio={aspectRatio}
-                                    />
-                                ))
-                            ) : (
-                                <div className="md:col-span-2 h-[500px] border border-dashed border-white/5 rounded-[3rem] flex flex-col items-center justify-center text-white/5 bg-gray-900/10">
-                                    <span className="text-[10px] font-black uppercase tracking-[0.5em]">Enter text to generate assets</span>
+                        <div className="grid md:grid-cols-1 xl:grid-cols-2 gap-8">
+                            {scenes.length > 0 ? scenes.map(scene => (
+                                <SceneCard 
+                                    key={scene.id} 
+                                    scene={scene}
+                                    isGenerating={isLoading}
+                                    onPromptChange={handlePromptChange}
+                                    onRegenerate={handleRegenerateImage} 
+                                    onNudge={handleNudge}
+                                    onNudgePromptChange={handleNudgePromptChange}
+                                    aspectRatio={aspectRatio}
+                                />
+                            )) : (
+                                <div className="md:col-span-2 h-[600px] border border-dashed border-white/5 rounded-[3rem] flex flex-col items-center justify-center text-white/5 bg-gray-900/10">
+                                    <span className="text-[10px] font-black uppercase tracking-[0.5em]">Awaiting Script submission</span>
                                 </div>
                             )}
                         </div>

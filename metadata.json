@@ -1,5 +1,5 @@
 {
-  "name": "Director.AI: Text-to-Video Workflow",
-  "description": "Professional automation tool for generating cinematic video clips from 2-sentence stories using Gemini 3 and Veo 3.1.",
+  "name": "Director.AI: Storyboarding Workflow",
+  "description": "Professional automation tool for generating cinematic storyboards from 2-sentence stories using Gemini 3 and Gemini 2.5 Flash Image.",
   "requestFramePermissions": []
 }
