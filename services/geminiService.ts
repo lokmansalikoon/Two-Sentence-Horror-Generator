@@ -1,31 +1,25 @@
 
 import { GoogleGenAI } from "@google/genai";
 
-/**
- * Validates that an API key is present before continuing.
- */
-function getClient() {
+function createAIClient() {
   const apiKey = process.env.API_KEY;
   if (!apiKey) {
-    throw new Error("API Key missing. Please connect to AI Studio using the button on the dashboard.");
+    throw new Error("API Key missing. Please connect to AI Studio.");
   }
   return new GoogleGenAI({ apiKey });
 }
 
-/**
- * Expands a simple sentence into a rich visual prompt based on a specific style protocol.
- */
 export async function expandPrompt(sentence: string, style: string): Promise<string> {
-  const ai = getClient();
+  const ai = createAIClient();
   
   const styleInstructions: Record<string, string> = {
-    "Noir Horror": "high-contrast film noir horror, deep shadows, dramatic chiaroscuro lighting, grainy monochrome or heavily desaturated tones, rainy urban atmosphere.",
-    "Found Footage": "grainy VHS found footage horror aesthetic, shaky camera, surveillance camera quality, low-light digital noise, eerie realism, timestamp on screen.",
-    "Junji Ito Manga": "intricate black and white ink manga art in the style of Junji Ito, fine line work, body horror elements, spirals, dramatic hatching, uncanny facial expressions.",
-    "Psychological/Surreal Horror": "surreal psychological horror, distorted reality, dreamlike uncanny atmosphere, symbolic imagery, vibrant but unsettling color palette, melting environments."
+    "Noir Horror": "high-contrast film noir horror, deep shadows, dramatic lighting, grainy monochrome or desaturated tones.",
+    "Found Footage": "grainy VHS horror, shaky camera, surveillance quality, low-light digital noise, timestamp.",
+    "Junji Ito Manga": "intricate black and white ink manga art, body horror, spirals, dramatic hatching, uncanny.",
+    "Psychological/Surreal Horror": "surreal horror, distorted reality, dreamlike uncanny atmosphere, unsettling color palette."
   };
 
-  const instruction = styleInstructions[style] || "cinematic cinematic visual description.";
+  const instruction = styleInstructions[style] || "cinematic visual description.";
 
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
@@ -33,17 +27,13 @@ export async function expandPrompt(sentence: string, style: string): Promise<str
     Style Protocol: ${style}
     Visual Directives: ${instruction}
     Source Sentence: "${sentence}"
-    
-    Constraint: Keep the description under 60 words and focus on textures and lighting.`,
+    Constraint: Keep it under 60 words. Focus on textures and atmosphere.`,
   });
   return response.text || "";
 }
 
-/**
- * Generates a 1:1 image using the budget-friendly gemini-2.5-flash-image model.
- */
 export async function generateImage(prompt: string): Promise<string> {
-  const ai = getClient();
+  const ai = createAIClient();
   const response = await ai.models.generateContent({
     model: 'gemini-2.5-flash-image',
     contents: { parts: [{ text: prompt }] },
@@ -55,16 +45,13 @@ export async function generateImage(prompt: string): Promise<string> {
   });
 
   const part = response.candidates[0].content.parts.find(p => p.inlineData);
-  if (!part?.inlineData) throw new Error("Image generation failed: No image data returned.");
+  if (!part?.inlineData) throw new Error("Image generation failed.");
   
   return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
 }
 
-/**
- * Edits an existing image based on a nudge prompt using gemini-2.5-flash-image.
- */
 export async function editImageWithNudge(base64Image: string, nudge: string): Promise<string> {
-  const ai = getClient();
+  const ai = createAIClient();
   const base64Data = base64Image.split(',')[1];
   const mimeType = base64Image.split(';')[0].split(':')[1];
 
@@ -73,7 +60,7 @@ export async function editImageWithNudge(base64Image: string, nudge: string): Pr
     contents: {
       parts: [
         { inlineData: { data: base64Data, mimeType: mimeType } },
-        { text: `Apply these changes to the image: ${nudge}` }
+        { text: `Edit this image according to this nudge: ${nudge}` }
       ]
     },
     config: {
@@ -84,7 +71,7 @@ export async function editImageWithNudge(base64Image: string, nudge: string): Pr
   });
 
   const part = response.candidates[0].content.parts.find(p => p.inlineData);
-  if (!part?.inlineData) throw new Error("Image edit failed: No image data returned.");
+  if (!part?.inlineData) throw new Error("Image edit failed.");
   
   return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
 }

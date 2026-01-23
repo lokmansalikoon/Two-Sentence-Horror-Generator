@@ -1,5 +1,5 @@
 {
-  "name": "Director.AI: Storyboarding Workflow",
-  "description": "Professional automation tool for generating cinematic storyboards from 2-sentence stories using Gemini 3 and Gemini 2.5 Flash Image.",
+  "name": "Director.AI: Image Production Workflow",
+  "description": "Professional automation tool for generating and editing cinematic 1920px images from text prompts using Gemini 3 and Gemini 2.5 Flash Image.",
   "requestFramePermissions": []
 }
